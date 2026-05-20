@@ -1,57 +1,134 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ModerationRepository } from './moderation.repository';
+import { ReportDto } from './dto/report.dto';
 
-interface ModerationResult {
+export interface ModerationResult {
   isViolation: boolean;
   reason?: string;
+  severity?: 'warn' | 'block';
 }
 
-/** Danh sách từ cấm cơ bản (mở rộng sau) */
-const BANNED_WORDS = ['badword1', 'badword2'];
+/** Từ cấm cơ bản — mở rộng qua admin sau */
+const BANNED_WORDS = [
+  'địt', 'đụ', 'lồn', 'cặc', 'buồi', 'đéo', 'vcl', 'vl', 'cc', 'cl',
+  'fuck', 'shit', 'bitch', 'asshole',
+];
 
-/** Regex phát hiện số điện thoại VN */
 const PHONE_REGEX = /(0|\+84)(3[2-9]|5[6-9]|7[06-9]|8[1-9]|9[0-9])\d{7}/;
-
-/** Regex phát hiện link */
 const LINK_REGEX = /https?:\/\/[^\s]+|www\.[^\s]+/i;
-
-/** Regex phát hiện email */
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+const ZALO_FB_REGEX = /(zalo|facebook|fb)\s*[:.]?\s*\S+/i;
+const TELEGRAM_REGEX = /(telegram|tele)\s*[:.]?\s*@\S+/i;
+
+const MAX_MESSAGES_PER_MINUTE = 20;
+const MIN_INTERVAL_MS = 600;
+const DUPLICATE_WINDOW_MS = 5000;
+
+interface SpamEntry {
+  timestamps: number[];
+  lastContent: string;
+  lastContentAt: number;
+}
 
 @Injectable()
 export class ModerationService {
   private readonly logger = new Logger(ModerationService.name);
+  private readonly spamTracker = new Map<string, SpamEntry>();
+
+  constructor(private readonly moderationRepository: ModerationRepository) {}
+
+  /** Kiểm duyệt text + anti-spam */
+  moderateMessage(userId: string, roomId: string, text: string): ModerationResult {
+    const contentCheck = this.checkText(text);
+    if (contentCheck.isViolation) return contentCheck;
+
+    const spamCheck = this.checkSpam(userId, roomId, text);
+    if (spamCheck.isViolation) return spamCheck;
+
+    return { isViolation: false };
+  }
 
   checkText(text: string): ModerationResult {
-    const lower = text.toLowerCase();
+    const lower = text.toLowerCase().trim();
 
-    // Kiểm tra từ cấm
     for (const word of BANNED_WORDS) {
       if (lower.includes(word)) {
-        this.logger.warn(`Phát hiện từ cấm: "${word}"`);
-        return { isViolation: true, reason: 'Nội dung không phù hợp' };
+        this.logger.warn(`Từ cấm: "${word}"`);
+        return { isViolation: true, reason: 'Nội dung không phù hợp với quy tắc cộng đồng', severity: 'warn' };
       }
     }
 
-    // Ngăn lộ số điện thoại
     if (PHONE_REGEX.test(text)) {
-      return { isViolation: true, reason: 'Không được chia sẻ số điện thoại' };
+      return { isViolation: true, reason: 'Không được chia sẻ số điện thoại', severity: 'warn' };
     }
-
-    // Ngăn lộ link
     if (LINK_REGEX.test(text)) {
-      return { isViolation: true, reason: 'Không được chia sẻ đường link' };
+      return { isViolation: true, reason: 'Không được chia sẻ đường link', severity: 'warn' };
     }
-
-    // Ngăn lộ email
     if (EMAIL_REGEX.test(text)) {
-      return { isViolation: true, reason: 'Không được chia sẻ email' };
+      return { isViolation: true, reason: 'Không được chia sẻ email', severity: 'warn' };
+    }
+    if (ZALO_FB_REGEX.test(lower)) {
+      return { isViolation: true, reason: 'Không được chia sẻ thông tin liên hệ mạng xã hội', severity: 'warn' };
+    }
+    if (TELEGRAM_REGEX.test(lower)) {
+      return { isViolation: true, reason: 'Không được chia sẻ thông tin liên hệ', severity: 'warn' };
     }
 
     return { isViolation: false };
   }
 
-  async checkImage(_imageUrl: string): Promise<ModerationResult> {
-    // TODO: Tích hợp Google Vision API / AWS Rekognition
+  checkSpam(userId: string, roomId: string, text: string): ModerationResult {
+    const key = `${roomId}:${userId}`;
+    const now = Date.now();
+    let entry = this.spamTracker.get(key);
+
+    if (!entry) {
+      entry = { timestamps: [], lastContent: '', lastContentAt: 0 };
+      this.spamTracker.set(key, entry);
+    }
+
+    // Chống gửi trùng liên tiếp
+    if (
+      entry.lastContent === text.trim() &&
+      now - entry.lastContentAt < DUPLICATE_WINDOW_MS
+    ) {
+      return { isViolation: true, reason: 'Không gửi tin nhắn trùng lặp', severity: 'warn' };
+    }
+
+    // Khoảng cách tối thiểu giữa 2 tin
+    const lastTs = entry.timestamps[entry.timestamps.length - 1];
+    if (lastTs && now - lastTs < MIN_INTERVAL_MS) {
+      return { isViolation: true, reason: 'Bạn gửi tin quá nhanh, hãy chậm lại', severity: 'warn' };
+    }
+
+    entry.timestamps = entry.timestamps.filter((t) => now - t < 60_000);
+    entry.timestamps.push(now);
+
+    if (entry.timestamps.length > MAX_MESSAGES_PER_MINUTE) {
+      return { isViolation: true, reason: 'Bạn gửi quá nhiều tin nhắn. Hãy chờ một lát.', severity: 'block' };
+    }
+
+    entry.lastContent = text.trim();
+    entry.lastContentAt = now;
+
     return { isViolation: false };
+  }
+
+  clearSpamTracker(userId: string, roomId: string) {
+    this.spamTracker.delete(`${roomId}:${userId}`);
+  }
+
+  async checkImage(_filename: string, mimetype: string): Promise<ModerationResult> {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowed.includes(mimetype)) {
+      return { isViolation: true, reason: 'Định dạng ảnh không được hỗ trợ' };
+    }
+    return { isViolation: false };
+  }
+
+  async createReport(reporterId: string, dto: ReportDto) {
+    const report = await this.moderationRepository.createReport(reporterId, dto);
+    this.logger.warn(`Report: ${reporterId} → ${dto.reportedUserId} (${dto.reason})`);
+    return report;
   }
 }

@@ -12,6 +12,10 @@ export class RoomRepository {
   }
 
   async findByRoomId(roomId: string): Promise<RoomDocument | null> {
+    return this.roomModel.findOne({ roomId, status: RoomStatus.ACTIVE }).exec();
+  }
+
+  async findByRoomIdAny(roomId: string): Promise<RoomDocument | null> {
     return this.roomModel.findOne({ roomId }).exec();
   }
 
