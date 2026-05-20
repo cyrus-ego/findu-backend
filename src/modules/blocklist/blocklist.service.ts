@@ -20,4 +20,9 @@ export class BlocklistService {
   isBlocked(blockerId: string, blockedId: string) {
     return this.blocklistRepository.isBlocked(blockerId, blockedId);
   }
+
+  /** Danh sách userId không được ghép (block hai chiều) */
+  getMutualBlockIds(userId: string) {
+    return this.blocklistRepository.getMutualBlockIds(userId);
+  }
 }
