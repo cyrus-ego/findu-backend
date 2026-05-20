@@ -23,6 +23,13 @@ export class UserRepository {
     return this.userModel.findByIdAndUpdate(id, data, { new: true }).exec();
   }
 
+  /** Cập nhật user theo email (dùng khi xác thực OTP) */
+  async updateByEmail(email: string, data: Partial<User>): Promise<UserDocument | null> {
+    return this.userModel
+      .findOneAndUpdate({ email: email.toLowerCase() }, data, { new: true })
+      .exec();
+  }
+
   async ban(id: string): Promise<UserDocument | null> {
     return this.userModel
       .findByIdAndUpdate(id, { isBanned: true, bannedAt: new Date() }, { new: true })
