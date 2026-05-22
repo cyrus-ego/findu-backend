@@ -99,10 +99,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('error', { message: 'Không có quyền vào phòng này' });
         return;
       }
-
-      client.join(data.roomId);
-      this.socketMeta.set(client.id, { roomId: data.roomId, userId });
-      this.addSocketToPresence(data.roomId, userId, client.id);
+      this.ensureSocketJoinedRoom(client, data.roomId, userId);
 
       const partnerId = this.roomService.getPartnerUserId(room, userId);
       const partnerOnline = partnerId ? this.isUserOnline(data.roomId, partnerId) : false;
@@ -154,6 +151,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     try {
       const room = await this.roomService.getRoom(dto.roomId);
+      this.ensureSocketJoinedRoom(client, dto.roomId, userId);
       const partnerId = this.roomService.getPartnerUserId(room, userId);
       if (partnerId && (await this.blocklistService.isBlocked(userId, partnerId))) {
         client.emit('error', { message: 'Không thể gửi tin nhắn' });
@@ -182,6 +180,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const userId = (client as any).userId;
     if (!userId) return;
+    this.ensureSocketJoinedRoom(client, data.roomId, userId);
 
     client.to(data.roomId).emit('chat:typing', { isTyping: data.isTyping });
   }
@@ -260,6 +259,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const roomMap = this.roomPresence.get(roomId);
     const sockets = roomMap?.get(userId);
     return !!sockets && sockets.size > 0;
+  }
+
+  /**
+   * Bảo vệ khỏi race condition: một số client emit chat:send trước room:join hoàn tất.
+   * Hàm này đảm bảo socket hiện tại đã vào đúng room trước khi xử lý event chat.
+   */
+  private ensureSocketJoinedRoom(client: Socket, roomId: string, userId: string): void {
+    const meta = this.socketMeta.get(client.id);
+    if (meta?.roomId === roomId && meta.userId === userId) {
+      return;
+    }
+
+    client.join(roomId);
+    this.socketMeta.set(client.id, { roomId, userId });
+    this.addSocketToPresence(roomId, userId, client.id);
   }
 
   private async closeRoom(roomId: string, systemMessage: string, initiatingClient?: Socket) {
