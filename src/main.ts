@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -45,9 +46,32 @@ async function bootstrap() {
   // Transform interceptor toàn cục
   app.useGlobalInterceptors(new TransformInterceptor());
 
+  // Swagger / OpenAPI
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('StrangerConfide API')
+    .setDescription('REST API docs cho StrangerConfide backend')
+    .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        in: 'header',
+      },
+      'access-token',
+    )
+    .build();
+
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('docs', app, swaggerDocument, {
+    useGlobalPrefix: true,
+    jsonDocumentUrl: 'docs-json',
+  });
+
   const port = config.get<number>('PORT', 3000);
   await app.listen(port);
   console.log(`🚀 StrangerConfide Backend chạy tại: http://localhost:${port}/api`);
+  console.log(`📚 Swagger UI: http://localhost:${port}/api/docs`);
 }
 
 bootstrap();
