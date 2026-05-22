@@ -62,10 +62,16 @@ async function bootstrap() {
     )
     .build();
 
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig, {
+    operationIdFactory: (controllerKey: string, methodKey: string) =>
+      `${controllerKey}_${methodKey}`,
+  });
   SwaggerModule.setup('docs', app, swaggerDocument, {
     useGlobalPrefix: true,
     jsonDocumentUrl: 'docs-json',
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
   });
 
   const port = config.get<number>('PORT', 3000);

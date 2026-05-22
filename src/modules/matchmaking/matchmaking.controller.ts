@@ -1,27 +1,30 @@
 import { Controller, Post, Delete, Get, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { MatchmakingService } from './matchmaking.service';
 import { JoinQueueDto } from './dto/join-queue.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from '../user/entities/user.schema';
+import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
+import { QueueStatusResponseDto } from '../../common/swagger/dto/responses/matchmaking-response.dto';
+import { MessageResponseDto } from '../../common/swagger/dto/responses/message-response.dto';
 
-/**
- * REST API ghép đôi — bổ sung WebSocket cho real-time.
- * Client nên kết nối socket /matchmaking sau khi join để nhận match:found.
- */
+@ApiTags('matchmaking')
+@ApiBearerAuth('access-token')
 @Controller('matchmaking')
 export class MatchmakingController {
   constructor(private readonly matchmakingService: MatchmakingService) {}
 
-  /**
-   * POST /api/matchmaking/join
-   * Tìm người tâm sự — đưa vào Redis Queue
-   */
   @Post('join')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @ApiOperation({
+    summary: 'Vào hàng đợi ghép đôi',
+    description: 'Kết nối WebSocket /matchmaking để nhận match:found realtime',
+  })
+  @ApiSuccessResponse(QueueStatusResponseDto)
+  @ApiStandardErrors()
   async join(@CurrentUser() user: UserDocument, @Body() dto: JoinQueueDto) {
-    // socketId tạm — cập nhật khi client connect WebSocket (queue:sync)
     const status = await this.matchmakingService.joinQueue(
       String(user._id),
       `pending:${user._id}`,
@@ -30,22 +33,20 @@ export class MatchmakingController {
     return status;
   }
 
-  /**
-   * DELETE /api/matchmaking/leave
-   * Huỷ tìm kiếm
-   */
   @Delete('leave')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Rời hàng đợi' })
+  @ApiSuccessResponse(MessageResponseDto)
+  @ApiStandardErrors()
   async leave(@CurrentUser() user: UserDocument) {
     await this.matchmakingService.leaveQueue(String(user._id));
     return { message: 'Đã rời hàng đợi' };
   }
 
-  /**
-   * GET /api/matchmaking/status
-   * Vị trí chờ thực tế
-   */
   @Get('status')
+  @ApiOperation({ summary: 'Trạng thái hàng đợi' })
+  @ApiSuccessResponse(QueueStatusResponseDto)
+  @ApiStandardErrors()
   async status(@CurrentUser() user: UserDocument) {
     return this.matchmakingService.getStatus(String(user._id));
   }

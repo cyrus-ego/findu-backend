@@ -10,6 +10,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { ChatService } from './chat.service';
 import { ChatGateway } from './chat.gateway';
 import { RoomService } from '../room/room.service';
@@ -19,9 +20,13 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from '../user/entities/user.schema';
 import { chatImageMulterOptions } from './config/chat-multer.config';
 import { ConfigService } from '@nestjs/config';
+import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
+import { ChatImageUploadResponseDto } from '../../common/swagger/dto/responses/chat-response.dto';
 
 const MAX_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10);
 
+@ApiTags('chat')
+@ApiBearerAuth('access-token')
 @Controller('chat')
 export class ChatController {
   constructor(
@@ -31,9 +36,25 @@ export class ChatController {
     private readonly config: ConfigService,
   ) {}
 
-  /** POST /api/chat/:roomId/image — Upload ảnh (moderation + broadcast realtime) */
   @Post(':roomId/image')
   @UseInterceptors(FileInterceptor('image', chatImageMulterOptions))
+  @ApiOperation({
+    summary: 'Upload ảnh trong phòng chat',
+    description: 'Text chat qua WebSocket event chat:send — không có REST endpoint',
+  })
+  @ApiParam({ name: 'roomId', example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['image'],
+      properties: {
+        image: { type: 'string', format: 'binary', description: 'JPEG, PNG, WebP, GIF' },
+      },
+    },
+  })
+  @ApiSuccessResponse(ChatImageUploadResponseDto, { status: 201 })
+  @ApiStandardErrors()
   async uploadImage(
     @CurrentUser() user: UserDocument,
     @Param('roomId') roomId: string,
