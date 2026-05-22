@@ -9,7 +9,7 @@ import {
   ApiUnauthorizedResponse,
   getSchemaPath,
 } from '@nestjs/swagger';
-import { ApiErrorResponseDto } from './dto/api-error-response.dto';
+import { ApiErrorResponseDto } from '../dto/api-error-response.dto';
 
 type HttpOkStatus = 200 | 201;
 

@@ -6,8 +6,8 @@ import { JoinQueueDto } from './dto/join-queue.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from '../user/entities/user.schema';
 import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
-import { QueueStatusResponseDto } from '../../common/swagger/dto/responses/matchmaking-response.dto';
-import { MessageResponseDto } from '../../common/swagger/dto/responses/message-response.dto';
+import { QueueStatusResponseDto } from './dto/queue-status.dto';
+import { MessageResponseDto } from '../../common/dto/message-response.dto';
 
 @ApiTags('matchmaking')
 @ApiBearerAuth('access-token')

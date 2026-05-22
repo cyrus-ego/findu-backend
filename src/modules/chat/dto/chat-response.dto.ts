@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MessageDocument } from '../entities/message.schema';
 
 export class ChatMessageDto {
   @ApiProperty({ example: '665a1b2c3d4e5f6789012348' })
@@ -23,4 +24,20 @@ export class ChatMessageDto {
 export class ChatImageUploadResponseDto {
   @ApiProperty({ type: ChatMessageDto })
   message: ChatMessageDto;
+}
+
+export function toChatMessagePayload(
+  message: MessageDocument,
+  senderAlias: string,
+  imageUrlOverride?: string,
+): ChatMessageDto {
+  const createdAt = (message as any).createdAt;
+  return {
+    id: String(message._id),
+    senderAlias,
+    type: message.type,
+    content: message.content,
+    imageUrl: imageUrlOverride ?? message.imageUrl,
+    createdAt: createdAt ? new Date(createdAt).toISOString() : new Date().toISOString(),
+  };
 }

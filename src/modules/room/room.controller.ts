@@ -4,7 +4,7 @@ import { RoomService } from './room.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from '../user/entities/user.schema';
 import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
-import { RoomSessionResponseDto } from '../../common/swagger/dto/responses/room-response.dto';
+import { RoomDetailResponseDto } from './dto/room-session.dto';
 
 @ApiTags('rooms')
 @ApiBearerAuth('access-token')
@@ -15,7 +15,7 @@ export class RoomController {
   @Get(':roomId')
   @ApiOperation({ summary: 'Thông tin phiên chat ẩn danh' })
   @ApiParam({ name: 'roomId', example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
-  @ApiSuccessResponse(RoomSessionResponseDto)
+  @ApiSuccessResponse(RoomDetailResponseDto)
   @ApiStandardErrors()
   async getRoom(@CurrentUser() user: UserDocument, @Param('roomId') roomId: string) {
     const userId = String(user._id);

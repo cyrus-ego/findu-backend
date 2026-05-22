@@ -21,7 +21,7 @@ import { UserDocument } from '../user/entities/user.schema';
 import { chatImageMulterOptions } from './config/chat-multer.config';
 import { ConfigService } from '@nestjs/config';
 import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
-import { ChatImageUploadResponseDto } from '../../common/swagger/dto/responses/chat-response.dto';
+import { ChatImageUploadResponseDto } from './dto/chat-response.dto';
 
 const MAX_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10);
 
@@ -86,15 +86,10 @@ export class ChatController {
     const message = await this.chatService.saveMessage(userId, alias, dto, file.mimetype);
     const port = this.config.get<number>('PORT', 3000);
     const base = this.config.get<string>('APP_URL', `http://localhost:${port}`);
-    const payload = this.chatService.toMessagePayload(message, alias);
+    const payload = this.chatService.toMessagePayload(message, alias, `${base}${imagePath}`);
 
-    const fullPayload = {
-      ...payload,
-      imageUrl: `${base}${imagePath}`,
-    };
+    this.chatGateway.broadcastMessage(roomId, payload);
 
-    this.chatGateway.broadcastMessage(roomId, fullPayload);
-
-    return { message: fullPayload };
+    return { message: payload };
   }
 }

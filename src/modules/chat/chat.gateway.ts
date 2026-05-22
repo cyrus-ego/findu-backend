@@ -18,6 +18,7 @@ import { MessageType } from './entities/message.schema';
 import { ModerationService } from '../moderation/moderation.service';
 import { BlocklistService } from '../blocklist/blocklist.service';
 import { RoomDocument } from '../room/entities/room.schema';
+import { ChatMessageDto } from './dto/chat-response.dto';
 
 interface SocketMeta {
   roomId: string;
@@ -221,7 +222,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  broadcastMessage(roomId: string, payload: Record<string, unknown>) {
+  broadcastMessage(roomId: string, payload: Record<string, unknown> | ChatMessageDto) {
     this.server.to(roomId).emit('chat:message', payload);
   }
 

@@ -19,6 +19,7 @@ import {
   EmailAlreadyExistsException,
 } from '../../common/exceptions/app.exceptions';
 import { UserDocument } from '../user/entities/user.schema';
+import { toAuthTokenResponse } from './dto/auth-response.dto';
 
 /** Mã bypass tạm thời — OTP email sẽ hoàn thiện sau */
 const OTP_BYPASS_CODE = '000000';
@@ -185,18 +186,7 @@ export class AuthService {
       expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN', '30d'),
     });
 
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: String(user._id),
-        email: user.email,
-        displayName: user.displayName,
-        avatar: user.avatar,
-        role: user.role,
-        isEmailVerified: user.isEmailVerified,
-      },
-    };
+    return toAuthTokenResponse(user, { accessToken, refreshToken });
   }
 
   /** Tạo mã OTP 6 số ngẫu nhiên */

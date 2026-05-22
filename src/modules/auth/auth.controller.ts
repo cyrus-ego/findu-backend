@@ -27,8 +27,9 @@ import {
   AuthTokenResponseDto,
   AuthUserDto,
   RegisterResponseDto,
-} from '../../common/swagger/dto/responses/auth-response.dto';
-import { MessageResponseDto } from '../../common/swagger/dto/responses/message-response.dto';
+  toAuthUser,
+} from './dto/auth-response.dto';
+import { MessageResponseDto } from '../../common/dto/message-response.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -96,14 +97,7 @@ export class AuthController {
   @ApiSuccessResponse(AuthUserDto)
   @ApiStandardErrors()
   getMe(@CurrentUser() user: UserDocument) {
-    return {
-      id: String(user._id),
-      email: user.email,
-      displayName: user.displayName,
-      avatar: user.avatar,
-      role: user.role,
-      isEmailVerified: user.isEmailVerified,
-    };
+    return toAuthUser(user);
   }
 
   @Public()

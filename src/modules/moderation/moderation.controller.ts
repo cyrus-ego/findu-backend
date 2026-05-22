@@ -6,7 +6,7 @@ import { ReportDto } from './dto/report.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from '../user/entities/user.schema';
 import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
-import { ReportCreatedResponseDto } from '../../common/swagger/dto/responses/message-response.dto';
+import { ReportCreatedResponseDto } from '../../common/dto/message-response.dto';
 
 @ApiTags('moderation')
 @ApiBearerAuth('access-token')

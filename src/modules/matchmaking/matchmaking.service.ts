@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { JoinQueueDto } from './dto/join-queue.dto';
-import { QueueStatusResponse, MatchResult } from './dto/queue-status.dto';
+import { QueueStatusResponseDto, MatchResult } from './dto/queue-status.dto';
 import { ProfileIncompleteException, NotInQueueException } from '../../common/exceptions/matchmaking.exceptions';
 import { ProfileService } from '../profile/profile.service';
 import { BlocklistService } from '../blocklist/blocklist.service';
@@ -62,7 +62,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     socketId: string,
     dto: JoinQueueDto,
-  ): Promise<QueueStatusResponse> {
+  ): Promise<QueueStatusResponseDto> {
     const profile = await this.profileService.findByUserId(userId);
     if (!profile?.gender || !profile?.age) {
       throw new ProfileIncompleteException();
@@ -112,7 +112,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Trạng thái hàng đợi thực tế */
-  async getStatus(userId: string): Promise<QueueStatusResponse> {
+  async getStatus(userId: string): Promise<QueueStatusResponseDto> {
     await this.cleanupStaleEntries();
 
     const entry = await this.getQueueEntry(userId);

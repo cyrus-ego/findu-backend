@@ -4,7 +4,8 @@ import { BlocklistService } from './blocklist.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
-import { BlocklistEntryResponseDto } from '../../common/swagger/dto/responses/blocklist-response.dto';
+import { BlocklistEntryResponseDto } from './dto/blocklist-response.dto';
+import { MessageResponseDto } from '../../common/dto/message-response.dto';
 
 @ApiTags('blocklist')
 @ApiBearerAuth('access-token')
@@ -25,7 +26,7 @@ export class BlocklistController {
   @Delete(':targetUserId')
   @ApiOperation({ summary: 'Bỏ chặn user' })
   @ApiParam({ name: 'targetUserId', example: '665a1b2c3d4e5f6789012347' })
-  @ApiSuccessResponse(BlocklistEntryResponseDto)
+  @ApiSuccessResponse(MessageResponseDto)
   @ApiStandardErrors()
   unblock(@CurrentUser() user: any, @Param('targetUserId') targetUserId: string) {
     return this.blocklistService.unblock(user._id, targetUserId);

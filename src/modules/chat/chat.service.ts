@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Message, MessageDocument, MessageType } from './entities/message.schema';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ModerationService } from '../moderation/moderation.service';
+import { ChatMessageDto, toChatMessagePayload } from './dto/chat-response.dto';
 
 @Injectable()
 export class ChatService {
@@ -57,14 +58,11 @@ export class ChatService {
     await this.messageModel.deleteMany({ roomId }).exec();
   }
 
-  toMessagePayload(message: MessageDocument, senderAlias: string) {
-    return {
-      id: String(message._id),
-      senderAlias,
-      type: message.type,
-      content: message.content,
-      imageUrl: message.imageUrl,
-      createdAt: (message as any).createdAt,
-    };
+  toMessagePayload(
+    message: MessageDocument,
+    senderAlias: string,
+    imageUrlOverride?: string,
+  ): ChatMessageDto {
+    return toChatMessagePayload(message, senderAlias, imageUrlOverride);
   }
 }

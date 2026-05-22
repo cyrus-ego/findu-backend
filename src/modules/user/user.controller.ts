@@ -5,7 +5,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from './entities/user.schema';
 import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
-import { UserResponseDto } from '../../common/swagger/dto/responses/user-response.dto';
+import { UserResponseDto } from './dto/user-response.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('access-token')

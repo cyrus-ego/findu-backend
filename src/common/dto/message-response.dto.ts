@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+/** Response đơn giản chỉ có message */
 export class MessageResponseDto {
   @ApiProperty({ example: 'OTP đã được gửi lại. Kiểm tra hộp thư của bạn.' })
   message: string;
