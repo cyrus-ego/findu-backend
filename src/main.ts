@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { BadRequestException, ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -8,6 +8,8 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { ApiCode } from './common/constants/api-code.enum';
+import { ValidationError } from 'class-validator';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -31,12 +33,20 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // Validation toàn cục
+  // Validation toàn cục — gắn code VALIDATION_ERROR + giữ nguyên list message
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      exceptionFactory: (errors: ValidationError[]) => {
+        const messages = flattenValidationErrors(errors);
+        return new BadRequestException({
+          statusCode: 400,
+          code: ApiCode.VALIDATION_ERROR,
+          message: messages,
+        });
+      },
     }),
   );
 
@@ -81,3 +91,21 @@ async function bootstrap() {
 }
 
 bootstrap();
+
+/** Trải mọi ValidationError (kể cả nested) thành mảng "field <message>" */
+function flattenValidationErrors(errors: ValidationError[], parent = ''): string[] {
+  const out: string[] = [];
+  for (const err of errors) {
+    const path = parent ? `${parent}.${err.property}` : err.property;
+    if (err.constraints) {
+      for (const msg of Object.values(err.constraints)) {
+        // Đảm bảo message bắt đầu bằng tên field để filter parse được
+        out.push(msg.startsWith(path) ? msg : `${path} ${msg}`);
+      }
+    }
+    if (err.children?.length) {
+      out.push(...flattenValidationErrors(err.children, path));
+    }
+  }
+  return out;
+}

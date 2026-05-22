@@ -1,13 +1,24 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
+import { ApiCode } from '../constants/api-code.enum';
+import { AppException } from './app.exception';
 
-export class ProfileNotFoundException extends HttpException {
+export class ProfileNotFoundException extends AppException {
   constructor() {
-    super('Chưa có hồ sơ. Vui lòng tạo hồ sơ trước.', HttpStatus.NOT_FOUND);
+    super(
+      { code: ApiCode.PROFILE_NOT_FOUND, message: 'Chưa có hồ sơ. Vui lòng tạo hồ sơ trước.' },
+      HttpStatus.NOT_FOUND,
+    );
   }
 }
 
-export class ProfileAlreadyExistsException extends HttpException {
+export class ProfileAlreadyExistsException extends AppException {
   constructor() {
-    super('Hồ sơ đã tồn tại. Dùng PUT hoặc PATCH để cập nhật.', HttpStatus.CONFLICT);
+    super(
+      {
+        code: ApiCode.PROFILE_ALREADY_EXISTS,
+        message: 'Hồ sơ đã tồn tại. Dùng PUT hoặc PATCH để cập nhật.',
+      },
+      HttpStatus.CONFLICT,
+    );
   }
 }
