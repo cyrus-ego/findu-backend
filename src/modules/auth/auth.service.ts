@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   BadRequestException,
   ForbiddenException,
@@ -19,8 +20,13 @@ import {
 } from '../../common/exceptions/app.exceptions';
 import { UserDocument } from '../user/entities/user.schema';
 
+/** Mã bypass tạm thời — OTP email sẽ hoàn thiện sau */
+const OTP_BYPASS_CODE = '000000';
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
@@ -57,20 +63,44 @@ export class AuthService {
     await this.mailService.sendOtpEmail(email, otp);
   }
 
-  /** Xác thực email bằng OTP */
+  /** Xác thực email bằng OTP (hoặc mã bypass 000000 khi dev) */
   async verifyEmail(dto: VerifyEmailDto) {
-    const record = await this.otpRepository.findValid(dto.email, dto.otp, 'verify-email');
-    if (!record) {
-      throw new BadRequestException('Mã OTP không hợp lệ hoặc đã hết hạn');
+    const user = await this.userService.findByEmail(dto.email);
+    if (!user) {
+      throw new BadRequestException('Không tìm thấy tài khoản với email này');
     }
 
-    await this.otpRepository.markUsed(String(record._id));
-    await this.userService.updateByEmail(record.email, { isEmailVerified: true });
+    if (this.isOtpBypassCode(dto.otp)) {
+      if (!this.isOtpBypassAllowed()) {
+        throw new BadRequestException('Mã OTP không hợp lệ hoặc đã hết hạn');
+      }
+      this.logger.warn(`OTP bypass (000000) cho ${dto.email}`);
+    } else {
+      const record = await this.otpRepository.findValid(dto.email, dto.otp, 'verify-email');
+      if (!record) {
+        throw new BadRequestException('Mã OTP không hợp lệ hoặc đã hết hạn');
+      }
+      await this.otpRepository.markUsed(String(record._id));
+    }
 
-    const user = await this.userService.findByEmail(dto.email);
-    if (!user) throw new UnauthorizedException();
+    if (!user.isEmailVerified) {
+      await this.userService.updateByEmail(dto.email, { isEmailVerified: true });
+    }
 
-    return this.generateTokens(user);
+    const verifiedUser = await this.userService.findByEmail(dto.email);
+    if (!verifiedUser) throw new UnauthorizedException();
+
+    return this.generateTokens(verifiedUser);
+  }
+
+  private isOtpBypassCode(otp: string): boolean {
+    return otp === OTP_BYPASS_CODE;
+  }
+
+  /** Chỉ cho bypass ở dev hoặc khi bật ALLOW_OTP_BYPASS=true */
+  private isOtpBypassAllowed(): boolean {
+    if (this.config.get<string>('ALLOW_OTP_BYPASS') === 'true') return true;
+    return this.config.get<string>('NODE_ENV', 'development') !== 'production';
   }
 
   /** Đăng nhập bằng email + password */
