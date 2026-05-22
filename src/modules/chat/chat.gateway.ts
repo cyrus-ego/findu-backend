@@ -96,7 +96,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const room = await this.roomService.getRoom(data.roomId);
       if (!this.roomService.isParticipant(room, userId)) {
-        client.emit('error', { message: 'Không có quyền vào phòng này' });
+        // Emit event riêng để frontend có thể redirect chính xác thay vì hiển thị lỗi generic.
+        client.emit('room:access_denied', { roomId: data.roomId, message: 'Không có quyền vào phòng này' });
         return;
       }
       this.ensureSocketJoinedRoom(client, data.roomId, userId);
@@ -132,7 +133,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.to(data.roomId).emit('room:presence', { userId, online: true });
     } catch {
-      client.emit('error', { message: 'Phòng không tồn tại hoặc đã đóng' });
+      // Phòng không tồn tại hoặc đã đóng — emit access_denied để frontend xóa cookie stale.
+      client.emit('room:access_denied', { roomId: data.roomId, message: 'Phòng không tồn tại hoặc đã đóng' });
     }
   }
 
