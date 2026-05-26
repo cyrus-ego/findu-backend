@@ -31,3 +31,16 @@ export class RoomDetailResponseDto extends RoomSessionDto {
   })
   partnerUserId?: string | null;
 }
+
+/** GET /rooms/active — kiểm tra có phòng active không */
+export class ActiveRoomResponseDto {
+  @ApiProperty({ example: true, description: 'User có phòng active hay không' })
+  hasActiveRoom: boolean;
+
+  @ApiProperty({
+    example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    nullable: true,
+    description: 'roomId nếu có, null nếu không',
+  })
+  roomId: string | null;
+}

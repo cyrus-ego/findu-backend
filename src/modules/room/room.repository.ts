@@ -19,6 +19,16 @@ export class RoomRepository {
     return this.roomModel.findOne({ roomId }).exec();
   }
 
+  async findActiveByParticipant(userId: string): Promise<RoomDocument | null> {
+    return this.roomModel
+      .findOne({
+        participants: userId,
+        status: RoomStatus.ACTIVE,
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
   async closeRoom(roomId: string): Promise<RoomDocument | null> {
     return this.roomModel
       .findOneAndUpdate(

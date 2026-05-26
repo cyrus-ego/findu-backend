@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -14,7 +14,7 @@ import { BlocklistModule } from '../blocklist/blocklist.module';
   imports: [
     MongooseModule.forFeature([{ name: Message.name, schema: MessageSchema }]),
     ModerationModule,
-    RoomModule,
+    forwardRef(() => RoomModule),
     BlocklistModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
