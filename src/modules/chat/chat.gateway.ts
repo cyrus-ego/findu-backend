@@ -299,9 +299,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private async finalizeRoom(_room: RoomDocument, roomId: string, systemMessage: string) {
     this.server.to(roomId).emit('chat:message', {
+      id: `system-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       senderAlias: 'System',
       type: MessageType.SYSTEM,
       content: systemMessage,
+      createdAt: new Date().toISOString(),
     });
 
     this.server.to(roomId).emit('room:closed', { roomId });
