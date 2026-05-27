@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserDocument } from '../entities/user.schema';
+import { UserDocument, Gender } from '../entities/user.schema';
 
 export class UserResponseDto {
   @ApiProperty({ example: '665a1b2c3d4e5f6789012345' })
@@ -13,6 +13,9 @@ export class UserResponseDto {
 
   @ApiProperty({ example: 'http://localhost:3000/uploads/avatars/abc.jpg' })
   avatar: string;
+
+  @ApiPropertyOptional({ enum: Gender, example: 'male', description: 'Giới tính' })
+  gender: string | null;
 
   @ApiProperty({ example: 'user', enum: ['user', 'vip', 'admin'] })
   role: string;
@@ -36,6 +39,7 @@ export function toUserResponse(user: UserDocument): UserResponseDto {
     email: user.email,
     displayName: user.displayName,
     avatar: user.avatar || '',
+    gender: user.gender || null,
     role: user.role,
     provider: user.provider,
     isEmailVerified: user.isEmailVerified,

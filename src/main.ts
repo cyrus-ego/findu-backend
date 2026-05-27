@@ -11,6 +11,28 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { ApiCode } from './common/constants/api-code.enum';
 import { ValidationError } from 'class-validator';
 
+function getAllowedOrigins(config: ConfigService): string[] {
+  const origins = new Set<string>();
+  const frontendUrl = config.get<string>('FRONTEND_URL', 'http://localhost:3001');
+  origins.add(frontendUrl);
+
+  const extra = config.get<string>('CORS_ORIGINS', '');
+  for (const o of extra.split(',').map((s) => s.trim()).filter(Boolean)) {
+    origins.add(o);
+  }
+
+  return [...origins];
+}
+
+function isDevNgrokOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname;
+    return host.endsWith('.ngrok-free.app') || host.endsWith('.ngrok.io') || host.endsWith('.ngrok.app');
+  } catch {
+    return false;
+  }
+}
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
@@ -27,9 +49,27 @@ async function bootstrap() {
   // Versioning
   app.enableVersioning({ type: VersioningType.URI });
 
-  // CORS - chỉ cho phép frontend
+  const allowedOrigins = getAllowedOrigins(config);
+  const isProduction = config.get<string>('NODE_ENV', 'development') === 'production';
+
   app.enableCors({
-    origin: config.get<string>('FRONTEND_URL', 'http://localhost:3001'),
+    origin: (origin, callback) => {
+      // Postman / server-to-server
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      // Dev: cho phép tunnel ngrok (URL đổi mỗi lần chạy)
+      if (!isProduction && isDevNgrokOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
   });
 

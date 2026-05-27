@@ -9,6 +9,12 @@ export enum AuthProvider {
   FACEBOOK = 'facebook',
 }
 
+export enum Gender {
+  MALE = 'male',
+  FEMALE = 'female',
+  OTHER = 'other',
+}
+
 export enum UserRole {
   USER = 'user',
   VIP = 'vip',
@@ -28,6 +34,9 @@ export class User {
 
   @Prop({ default: '' })
   avatar: string;
+
+  @Prop({ type: String, enum: Gender, default: null })
+  gender: Gender;
 
   @Prop({ type: String, enum: AuthProvider, default: AuthProvider.LOCAL })
   provider: AuthProvider;
