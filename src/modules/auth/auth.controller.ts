@@ -19,6 +19,7 @@ import { LoginDto } from './dto/login.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
+import { GoogleAuthDto } from './dto/google-auth.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from '../user/entities/user.schema';
@@ -101,9 +102,24 @@ export class AuthController {
   }
 
   @Public()
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @ApiOperation({
+    summary: 'Đăng nhập Google (mobile)',
+    description:
+      'Mobile gửi `idToken` từ Google Sign-In SDK. Server xác minh token và trả JWT (access + refresh).',
+  })
+  @ApiSuccessResponse(AuthTokenResponseDto)
+  @ApiStandardErrors()
+  googleLoginMobile(@Body() dto: GoogleAuthDto) {
+    return this.authService.googleLoginWithIdToken(dto.idToken);
+  }
+
+  @Public()
   @Get('google')
   @UseGuards(AuthGuard('google'))
-  @ApiOperation({ summary: 'OAuth Google — redirect' })
+  @ApiOperation({ summary: 'OAuth Google — redirect (web)' })
   googleAuth() {}
 
   @Public()

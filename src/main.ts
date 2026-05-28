@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { CustomIoAdapter } from './common/adapters/socket-io.adapter';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { ApiCode } from './common/constants/api-code.enum';
@@ -36,6 +37,9 @@ function isDevNgrokOrigin(origin: string): boolean {
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
+
+  // Socket.IO adapter với CORS cho ngrok
+  app.useWebSocketAdapter(new CustomIoAdapter(app, config));
 
   // Bảo mật HTTP headers
   app.use(helmet());

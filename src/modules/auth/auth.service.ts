@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { OAuth2Client } from 'google-auth-library';
 import { UserService } from '../user/user.service';
 import { OtpRepository } from './otp.repository';
 import { MailService } from './mail.service';
@@ -126,6 +127,56 @@ export class AuthService {
     await this.userService.updateById(String(user._id), { lastSeenAt: new Date() });
 
     return this.generateTokens(user);
+  }
+
+  /** Đăng nhập Google bằng idToken (mobile / native SDK) */
+  async googleLoginWithIdToken(idToken: string) {
+    const clientIds = this.getGoogleClientIds();
+    if (clientIds.length === 0) {
+      throw new BadRequestException('Google OAuth chưa được cấu hình trên server');
+    }
+
+    const client = new OAuth2Client();
+    let payload: { email?: string; email_verified?: boolean; name?: string; picture?: string } | undefined;
+
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: clientIds,
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      this.logger.warn(`Google idToken verify failed: ${(err as Error).message}`);
+      throw new UnauthorizedException('Google ID token không hợp lệ hoặc đã hết hạn');
+    }
+
+    if (!payload?.email) {
+      throw new UnauthorizedException('Không lấy được email từ tài khoản Google');
+    }
+
+    if (payload.email_verified === false) {
+      throw new UnauthorizedException('Email Google chưa được xác thực');
+    }
+
+    return this.oauthLogin({
+      email: payload.email,
+      name: payload.name || payload.email.split('@')[0],
+      avatar: payload.picture,
+      provider: 'google',
+    });
+  }
+
+  private getGoogleClientIds(): string[] {
+    const ids = new Set<string>();
+    const primary = this.config.get<string>('GOOGLE_CLIENT_ID');
+    if (primary) ids.add(primary);
+
+    const extra = this.config.get<string>('GOOGLE_CLIENT_IDS', '');
+    for (const id of extra.split(',').map((s) => s.trim()).filter(Boolean)) {
+      ids.add(id);
+    }
+
+    return [...ids];
   }
 
   /** Đăng nhập qua OAuth (Google / Facebook) */
