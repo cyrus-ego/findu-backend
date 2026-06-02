@@ -37,11 +37,21 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    this.redis = new Redis({
-      host: this.config.get<string>('REDIS_HOST', 'localhost'),
-      port: this.config.get<number>('REDIS_PORT', 6379),
-      password: this.config.get<string>('REDIS_PASSWORD') || undefined,
-    });
+    const redisUrl = this.config.get<string>('REDIS_URL');
+    if (redisUrl) {
+      this.redis = new Redis(redisUrl);
+    } else {
+      this.redis = new Redis({
+        host: this.config.get<string>('REDIS_HOST', 'localhost'),
+        port: this.config.get<number>('REDIS_PORT', 6379),
+        password: this.config.get<string>('REDIS_PASSWORD') || undefined,
+      });
+    }
+
+    this.redis.on('error', (err) =>
+      this.logger.error(`Redis error: ${err.message}`, err.stack),
+    );
+    this.redis.on('connect', () => this.logger.log('Redis connected'));
   }
 
   onModuleDestroy() {
