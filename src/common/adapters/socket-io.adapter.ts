@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Redis } from 'ioredis';
+import { createCorsOriginDelegate } from '../../config/cors.util';
 
 export class CustomIoAdapter extends IoAdapter {
   private readonly logger = new Logger(CustomIoAdapter.name);
@@ -16,44 +17,12 @@ export class CustomIoAdapter extends IoAdapter {
   }
 
   createIOServer(port: number, options?: any): any {
-    const isProduction =
-      this.config.get<string>('NODE_ENV', 'development') === 'production';
-
-    const corsOptions: any = {
-      origin: true,
-      credentials: true,
-    };
-
-    if (!isProduction) {
-      const frontendUrl = this.config.get<string>('FRONTEND_URL', 'http://localhost:3001');
-      const extra = this.config.get<string>('CORS_ORIGINS', '');
-      const origins = [frontendUrl, ...extra.split(',').map((s: string) => s.trim()).filter(Boolean)];
-
-      if (origins.length > 0) {
-        corsOptions.origin = (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
-          if (!origin) {
-            callback(null, true);
-            return;
-          }
-          if (origins.includes(origin)) {
-            callback(null, true);
-            return;
-          }
-          try {
-            const host = new URL(origin).hostname;
-            if (host.endsWith('.ngrok-free.app') || host.endsWith('.ngrok.io') || host.endsWith('.ngrok.app')) {
-              callback(null, true);
-              return;
-            }
-          } catch {}
-          callback(new Error(`Origin ${origin} not allowed by CORS`));
-        };
-      }
-    }
-
     const server = super.createIOServer(port, {
       ...options,
-      cors: corsOptions,
+      cors: {
+        origin: createCorsOriginDelegate(this.config),
+        credentials: true,
+      },
     });
 
     const redisUrl = this.config.get<string>('REDIS_URL');

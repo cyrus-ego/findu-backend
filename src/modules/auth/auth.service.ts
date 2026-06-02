@@ -110,6 +110,9 @@ export class AuthService {
     const user = await this.userService.findByEmail(dto.email);
     if (!user) throw new InvalidCredentialsException();
 
+    // User đăng ký qua OAuth không có password — không cho login bằng email/pass
+    if (!user.password) throw new InvalidCredentialsException();
+
     const valid = await comparePassword(dto.password, user.password);
     if (!valid) throw new InvalidCredentialsException();
 
@@ -118,8 +121,12 @@ export class AuthService {
     }
 
     if (!user.isEmailVerified) {
-      // Gửi lại OTP nếu chưa xác thực
-      await this.sendVerificationOtp(user.email);
+      // Gửi lại OTP nếu chưa xác thực — lỗi gửi mail không nên block login flow
+      try {
+        await this.sendVerificationOtp(user.email);
+      } catch (err) {
+        this.logger.warn(`Không thể gửi lại OTP cho ${user.email}: ${String(err)}`);
+      }
       throw new BadRequestException('Email chưa được xác thực. Chúng tôi đã gửi lại mã OTP.');
     }
 

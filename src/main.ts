@@ -11,28 +11,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { ApiCode } from './common/constants/api-code.enum';
 import { ValidationError } from 'class-validator';
-
-function getAllowedOrigins(config: ConfigService): string[] {
-  const origins = new Set<string>();
-  const frontendUrl = config.get<string>('FRONTEND_URL', 'http://localhost:3001');
-  origins.add(frontendUrl);
-
-  const extra = config.get<string>('CORS_ORIGINS', '');
-  for (const o of extra.split(',').map((s) => s.trim()).filter(Boolean)) {
-    origins.add(o);
-  }
-
-  return [...origins];
-}
-
-function isDevNgrokOrigin(origin: string): boolean {
-  try {
-    const host = new URL(origin).hostname;
-    return host.endsWith('.ngrok-free.app') || host.endsWith('.ngrok.io') || host.endsWith('.ngrok.app');
-  } catch {
-    return false;
-  }
-}
+import { buildCorsOptions, getCorsAllowedOrigins, isProductionEnv } from './config/cors.util';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -53,29 +32,15 @@ async function bootstrap() {
   // Versioning
   app.enableVersioning({ type: VersioningType.URI });
 
-  const allowedOrigins = getAllowedOrigins(config);
-  const isProduction = config.get<string>('NODE_ENV', 'development') === 'production';
+  const corsOptions = buildCorsOptions(config);
+  app.enableCors(corsOptions);
 
-  app.enableCors({
-    origin: (origin, callback) => {
-      // Postman / server-to-server
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-        return;
-      }
-      // Dev: cho phép tunnel ngrok (URL đổi mỗi lần chạy)
-      if (!isProduction && isDevNgrokOrigin(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
-    },
-    credentials: true,
-  });
+  const allowedOrigins = getCorsAllowedOrigins(config);
+  const production = isProductionEnv(config);
+  console.log(
+    `🔒 CORS (${production ? 'production — allow-list' : 'development — allow-list + localhost + ngrok'}):`,
+    allowedOrigins.length ? allowedOrigins.join(', ') : '(chưa cấu hình FRONTEND_URL / CORS_ORIGINS)',
+  );
 
   // Validation toàn cục — gắn code VALIDATION_ERROR + giữ nguyên list message
   app.useGlobalPipes(
