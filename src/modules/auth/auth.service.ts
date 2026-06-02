@@ -58,11 +58,13 @@ export class AuthService {
     };
   }
 
-  /** Gửi OTP xác thực email */
+  /** Gửi OTP xác thực email — lưu OTP trước; gửi mail không chặn HTTP response */
   async sendVerificationOtp(email: string): Promise<void> {
     const otp = this.generateOtp();
     await this.otpRepository.createOtp(email, otp, 'verify-email');
-    await this.mailService.sendOtpEmail(email, otp);
+    void this.mailService.sendOtpEmail(email, otp).catch((err) => {
+      this.logger.warn(`Gửi email OTP thất bại cho ${email}: ${String(err)}`);
+    });
   }
 
   /** Xác thực email bằng OTP (hoặc mã bypass 000000 khi dev) */

@@ -12,6 +12,10 @@ export class MailService {
       host: config.get<string>('MAIL_HOST', 'smtp.gmail.com'),
       port: config.get<number>('MAIL_PORT', 587),
       secure: false,
+      // Nodemailer mặc định connectionTimeout = 120s — Railway không ra SMTP sẽ block ~2 phút
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
       auth: {
         user: config.get<string>('MAIL_USER'),
         pass: config.get<string>('MAIL_PASS'),
@@ -19,8 +23,17 @@ export class MailService {
     });
   }
 
+  private isMailConfigured(): boolean {
+    return Boolean(this.config.get<string>('MAIL_USER')?.trim());
+  }
+
   /** Gửi OTP xác thực email */
   async sendOtpEmail(email: string, otp: string): Promise<void> {
+    if (!this.isMailConfigured()) {
+      this.logger.warn(`MAIL_USER chưa cấu hình — bỏ qua gửi OTP tới ${email}`);
+      return;
+    }
+
     const from = this.config.get<string>('MAIL_FROM', 'StrangerConfide <noreply@strangerconfide.app>');
 
     try {

@@ -94,7 +94,7 @@ async function bootstrap() {
   });
 
   const port = config.get<number>('PORT', 3000);
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`🚀 StrangerConfide Backend chạy tại: http://localhost:${port}/api`);
   console.log(`📚 Swagger UI: http://localhost:${port}/api/docs`);
 }

@@ -27,5 +27,9 @@ export class Otp {
 
 export const OtpSchema = SchemaFactory.createForClass(Otp);
 
+// deleteMany({ email, type }) khi tạo OTP mới
+OtpSchema.index({ email: 1, type: 1 });
+// findValid({ email, code, type, used, expiresAt })
+OtpSchema.index({ email: 1, type: 1, code: 1, used: 1, expiresAt: 1 });
 // TTL index: MongoDB tự xóa document sau khi hết hạn
 OtpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

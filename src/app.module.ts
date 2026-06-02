@@ -12,6 +12,7 @@ import { ModerationModule } from './modules/moderation/moderation.module';
 import { BlocklistModule } from './modules/blocklist/blocklist.module';
 import { GatewayModule } from './modules/gateway/gateway.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { resolveMongoUri } from './config/mongodb.util';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        uri: config.get<string>('MONGODB_URI'),
+        uri: resolveMongoUri(config),
       }),
     }),
 

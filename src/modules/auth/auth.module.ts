@@ -13,9 +13,8 @@ import { Otp, OtpSchema } from './entities/otp.schema';
 import { UserModule } from '../user/user.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
-import { GoogleStrategy } from './strategies/google.strategy';
-import { FacebookStrategy } from './strategies/facebook.strategy';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { createOptionalOAuthProviders } from './oauth.util';
 
 @Module({
   imports: [
@@ -38,8 +37,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     OtpRepository,
     JwtStrategy,
     LocalStrategy,
-    GoogleStrategy,
-    FacebookStrategy,
+    ...createOptionalOAuthProviders(),
     // Apply JwtAuthGuard globally (kết hợp với @Public() decorator)
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     // Apply ThrottlerGuard globally
