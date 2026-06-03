@@ -46,14 +46,14 @@ export class AuthService {
     const user = await this.userService.create({
       ...dto,
       password: passwordHash,
-      isEmailVerified: false,
+      isEmailVerified: true, // TODO: set false sau khi implement gửi OTP
     });
 
-    // Tạo và gửi OTP
-    await this.sendVerificationOtp(user.email);
+    // TODO: Gửi OTP xác thực email — tạm thời bỏ qua
+    // await this.sendVerificationOtp(user.email);
 
     return {
-      message: 'Đăng ký thành công. Vui lòng kiểm tra email để xác thực.',
+      message: 'Đăng ký thành công.',
       email: user.email,
     };
   }
