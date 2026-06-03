@@ -23,6 +23,10 @@ export class CustomIoAdapter extends IoAdapter {
         origin: createCorsOriginDelegate(this.config),
         credentials: true,
       },
+      connectionStateRecovery: {
+        maxDisconnectionDuration: 2 * 60 * 1000, // 2 phút — đủ cho browser tab switch ngắn
+        skipMiddlewares: true,
+      },
     });
 
     const redisUrl = this.config.get<string>('REDIS_URL');

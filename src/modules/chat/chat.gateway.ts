@@ -70,7 +70,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         secret: this.config.get<string>('JWT_SECRET'),
       });
 
-      (client as any).userId = payload.sub;
+      const userId = payload.sub;
+      (client as any).userId = userId;
+
+      // Auto-rejoin phòng đang active — xử lý trường hợp browser treo lâu ngày
+      try {
+        const room = await this.roomService.getActiveRoomForUser(userId);
+        if (room) {
+          this.ensureSocketJoinedRoom(client, room.roomId, userId);
+        }
+      } catch {
+        // Không có phòng active — bỏ qua
+      }
     } catch {
       this.logger.warn(`Unauthorized chat socket: ${client.id}`);
       client.disconnect();
