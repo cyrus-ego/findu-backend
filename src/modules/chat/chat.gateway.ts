@@ -25,6 +25,13 @@ interface SocketMeta {
   userId: string;
 }
 
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const ROOM_CACHE_TTL = 60_000; // 60 giây
+
 @WebSocketGateway({
   namespace: '/chat',
   cors: { origin: true, credentials: true },
@@ -37,6 +44,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly socketMeta = new Map<string, SocketMeta>();
   /** roomId → userId → set socketIds */
   private readonly roomPresence = new Map<string, Map<string, Set<string>>>();
+  private readonly roomCache = new Map<string, CacheEntry<RoomDocument>>();
 
   constructor(
     private readonly chatService: ChatService,
@@ -101,6 +109,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.emit('room:access_denied', { roomId: data.roomId, message: 'Không có quyền vào phòng này' });
         return;
       }
+      this.setCachedRoom(data.roomId, room);
       this.ensureSocketJoinedRoom(client, data.roomId, userId);
 
       const partnerId = this.roomService.getPartnerUserId(room, userId);
@@ -153,7 +162,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      const room = await this.roomService.getRoom(dto.roomId);
+      const room = this.getCachedRoom(dto.roomId) ?? await this.roomService.getRoom(dto.roomId);
       this.ensureSocketJoinedRoom(client, dto.roomId, userId);
       const partnerId = this.roomService.getPartnerUserId(room, userId);
       if (partnerId && (await this.blocklistService.isBlocked(userId, partnerId))) {
@@ -197,6 +206,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = (client as any).userId as string | undefined;
     if (!userId) return;
 
+    this.invalidateRoomCache(data.roomId);
     await this.closeRoom(data.roomId, 'Đối phương đã rời phòng.', client);
   }
 
@@ -216,6 +226,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       await this.blocklistService.block(userId, data.targetUserId);
+      this.invalidateRoomCache(data.roomId);
       await this.closeRoom(data.roomId, 'Phòng đã đóng do chặn người dùng.', client);
     } catch (err: any) {
       client.emit('error', { message: err?.message || 'Không thể chặn' });
@@ -264,6 +275,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return !!sockets && sockets.size > 0;
   }
 
+  private getCachedRoom(roomId: string): RoomDocument | undefined {
+    const cached = this.roomCache.get(roomId);
+    if (!cached) return undefined;
+    if (Date.now() > cached.expiresAt) {
+      this.roomCache.delete(roomId);
+      return undefined;
+    }
+    return cached.data;
+  }
+
+  private setCachedRoom(roomId: string, room: RoomDocument): void {
+    this.roomCache.set(roomId, { data: room, expiresAt: Date.now() + ROOM_CACHE_TTL });
+  }
+
+  private invalidateRoomCache(roomId: string): void {
+    this.roomCache.delete(roomId);
+  }
+
   /**
    * Bảo vệ khỏi race condition: một số client emit chat:send trước room:join hoàn tất.
    * Hàm này đảm bảo socket hiện tại đã vào đúng room trước khi xử lý event chat.
@@ -280,6 +309,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private async closeRoom(roomId: string, systemMessage: string, initiatingClient?: Socket) {
+    this.invalidateRoomCache(roomId);
+
     try {
       const room = await this.roomService.getRoom(roomId);
       await this.finalizeRoom(room, roomId, systemMessage);
