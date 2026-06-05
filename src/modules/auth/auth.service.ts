@@ -21,6 +21,7 @@ import {
 } from '../../common/exceptions/app.exceptions';
 import { UserDocument } from '../user/entities/user.schema';
 import { toAuthTokenResponse } from './dto/auth-response.dto';
+import { isOAuthClientConfigured } from './oauth.util';
 
 /** Mã bypass tạm thời — OTP email sẽ hoàn thiện sau */
 const OTP_BYPASS_CODE = '000000';
@@ -136,6 +137,48 @@ export class AuthService {
     await this.userService.updateById(String(user._id), { lastSeenAt: new Date() });
 
     return this.generateTokens(user);
+  }
+
+  /** Đăng nhập Facebook bằng accessToken (mobile / native SDK) */
+  async facebookLoginWithAccessToken(accessToken: string) {
+    const appId = this.config.get<string>('FACEBOOK_APP_ID');
+    if (!isOAuthClientConfigured(appId)) {
+      throw new BadRequestException('Facebook OAuth chưa được cấu hình trên server');
+    }
+
+    let fbUser: { id?: string; name?: string; email?: string; picture?: { data?: { url?: string } } };
+
+    try {
+      const url = `https://graph.facebook.com/me?fields=id,name,email,picture&access_token=${encodeURIComponent(accessToken)}&appsecret_proof=${encodeURIComponent(await this.generateAppSecretProof(accessToken))}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const body = await res.text();
+        this.logger.warn(`Facebook Graph API error: ${body}`);
+        throw new UnauthorizedException('Facebook access token không hợp lệ hoặc đã hết hạn');
+      }
+      fbUser = await res.json();
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      this.logger.warn(`Facebook token verify failed: ${(err as Error).message}`);
+      throw new UnauthorizedException('Không thể xác thực Facebook access token');
+    }
+
+    if (!fbUser.id) {
+      throw new UnauthorizedException('Không lấy được thông tin từ tài khoản Facebook');
+    }
+
+    return this.oauthLogin({
+      email: fbUser.email || `fb_${fbUser.id}@strangerconfide.local`,
+      name: fbUser.name || fbUser.id,
+      avatar: fbUser.picture?.data?.url,
+      provider: 'facebook',
+    });
+  }
+
+  private async generateAppSecretProof(accessToken: string): Promise<string> {
+    const { createHash } = await import('crypto');
+    const appSecret = this.config.get<string>('FACEBOOK_APP_SECRET') || '';
+    return createHash('sha256').update(accessToken + appSecret).digest('hex');
   }
 
   /** Đăng nhập Google bằng idToken (mobile / native SDK) */

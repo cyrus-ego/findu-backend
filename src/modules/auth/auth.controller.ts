@@ -20,6 +20,7 @@ import { VerifyEmailDto } from './dto/verify-email.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
 import { GoogleAuthDto } from './dto/google-auth.dto';
+import { FacebookAuthDto } from './dto/facebook-auth.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from '../user/entities/user.schema';
@@ -114,6 +115,21 @@ export class AuthController {
   @ApiStandardErrors()
   googleLoginMobile(@Body() dto: GoogleAuthDto) {
     return this.authService.googleLoginWithIdToken(dto.idToken);
+  }
+
+  @Public()
+  @Post('facebook')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  @ApiOperation({
+    summary: 'Đăng nhập Facebook (mobile)',
+    description:
+      'Mobile gửi `accessToken` từ Facebook Login SDK. Server xác minh token qua Graph API và trả JWT (access + refresh).',
+  })
+  @ApiSuccessResponse(AuthTokenResponseDto)
+  @ApiStandardErrors()
+  facebookLoginMobile(@Body() dto: FacebookAuthDto) {
+    return this.authService.facebookLoginWithAccessToken(dto.accessToken);
   }
 
   @Public()
