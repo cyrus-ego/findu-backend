@@ -139,11 +139,66 @@ Server: handleJoinRoom() → trả về messages + session
 Chat UI hoạt động bình thường
 ```
 
+---
+
+## Mobile (React Native / Flutter)
+
+Mobile không có `visibilitychange` hoặc cookie, nhưng cần chú ý:
+
+### 1. Dùng REST API để fetch history, Socket.IO cho real-time
+
+Server đã thêm `GET /api/v1/rooms/:roomId/messages?page=1&limit=50` cho mobile.
+
+```typescript
+// Fetch history qua REST
+const res = await fetch(`/api/rooms/${roomId}/messages?page=1&limit=50`, {
+  headers: { Authorization: `Bearer ${token}` },
+});
+const data = await res.json();
+// data.data = { messages: [...], total, page, totalPages }
+
+// Real-time messages vẫn qua Socket.IO
+socket.emit('room:join', { roomId });
+socket.on('chat:message', (msg) => appendMessage(msg));
+```
+
+### 2. App state lifecycle
+
+```typescript
+import { AppState, AppStateStatus } from 'react-native';
+
+useEffect(() => {
+  const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+    if (state === 'active' && socket?.disconnected) {
+      socket.connect();
+    }
+  });
+  return () => sub.remove();
+}, []);
+```
+
+### 3. Lưu `activeRoomId` local (AsyncStorage / SecureStore)
+
+```typescript
+await AsyncStorage.setItem('activeRoomId', roomId);
+// Khi app khởi động lại
+const savedRoomId = await AsyncStorage.getItem('activeRoomId');
+```
+
+---
+
 ## Checklist cho frontend agent
 
+### Web
 - [ ] Config Socket.IO client với `transports: ['websocket']`
 - [ ] Lưu `activeRoomId` từ cookie, emit `room:join` trong `connect` event
 - [ ] Xóa cookie khi nhận `room:access_denied` hoặc `room:closed`
 - [ ] Thêm `visibilitychange` listener để force reconnect
 - [ ] Thêm UI indicator "Đang kết nối lại..." khi socket disconnected
 - [ ] Test: treo tab 5-10 phút, quay lại → chat vẫn hoạt động
+
+### Mobile
+- [ ] Fetch history qua `GET /api/v1/rooms/:roomId/messages` có Bearer token
+- [ ] Socket.IO cho real-time messages, REST cho history load
+- [ ] Handle `AppState` change để reconnect socket
+- [ ] Lưu `activeRoomId` vào AsyncStorage để restore sau khi kill app

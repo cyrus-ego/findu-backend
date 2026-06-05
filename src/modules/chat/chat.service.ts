@@ -54,6 +54,25 @@ export class ChatService {
       .exec();
   }
 
+  /** REST API cho mobile — có phân trang */
+  async getRoomMessages(
+    roomId: string,
+    page: number = 1,
+    limit: number = 50,
+  ): Promise<{ items: MessageDocument[]; total: number }> {
+    const skip = (page - 1) * limit;
+    const [items, total] = await Promise.all([
+      this.messageModel
+        .find({ roomId, type: { $ne: MessageType.SYSTEM } })
+        .sort({ createdAt: 1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.messageModel.countDocuments({ roomId, type: { $ne: MessageType.SYSTEM } }).exec(),
+    ]);
+    return { items, total };
+  }
+
   async deleteRoomMessages(roomId: string): Promise<void> {
     await this.messageModel.deleteMany({ roomId }).exec();
   }

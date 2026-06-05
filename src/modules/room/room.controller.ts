@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Param, ForbiddenException } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Post, Param, Query, ForbiddenException } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { RoomService } from './room.service';
 import { ChatGateway } from '../chat/chat.gateway';
 import { ChatService } from '../chat/chat.service';
@@ -10,6 +10,7 @@ import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swag
 import { RoomDetailResponseDto, ActiveRoomResponseDto } from './dto/room-session.dto';
 import { MessageResponseDto } from '../../common/dto/message-response.dto';
 import { MessageType } from '../chat/entities/message.schema';
+import { ChatMessageDto, toChatMessagePayload } from '../chat/dto/chat-response.dto';
 
 @ApiTags('rooms')
 @ApiBearerAuth('access-token')
@@ -87,5 +88,42 @@ export class RoomController {
       ...session,
       partnerUserId: partnerId,
     };
+  }
+
+  @Get(':roomId/messages')
+  @ApiOperation({ summary: 'Lấy lịch sử tin nhắn chat (phân trang)', description: 'Dành cho mobile, web vẫn dùng Socket.IO' })
+  @ApiParam({ name: 'roomId', example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 50 })
+  @ApiStandardErrors()
+  async getMessages(
+    @CurrentUser() user: UserDocument,
+    @Param('roomId') roomId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const userId = String(user._id);
+    const room = await this.roomService.getRoom(roomId);
+    if (!this.roomService.isParticipant(room, userId)) {
+      throw new ForbiddenException('Không có quyền truy cập phòng này');
+    }
+
+    const pg = Math.max(1, parseInt(page || '1', 10) || 1);
+    const lim = Math.min(100, Math.max(1, parseInt(limit || '50', 10) || 50));
+
+    const { items, total } = await this.chatService.getRoomMessages(roomId, pg, lim);
+
+    const userAlias = this.roomService.getAlias(room, userId);
+    const totalPages = Math.ceil(total / lim);
+
+    const messages: ChatMessageDto[] = items.map((m) => {
+      const alias =
+        m.senderId.toString() === userId
+          ? userAlias
+          : this.roomService.getAlias(room, m.senderId.toString());
+      return toChatMessagePayload(m, alias);
+    });
+
+    return { messages, total, page: pg, totalPages };
   }
 }
