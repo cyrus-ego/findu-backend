@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
-const THROTTLE_TTL_MS = 60_000;
+const THROTTLE_TTL_MS = 10_000;
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   const parsed = parseInt(value ?? '', 10);
