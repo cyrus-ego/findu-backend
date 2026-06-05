@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ModerationRepository } from './moderation.repository';
 import { ReportDto } from './dto/report.dto';
+import {
+  getMaxMessagesPerMinute,
+  getMinMessageIntervalMs,
+} from '../../config/rate-limit.util';
 
 export interface ModerationResult {
   isViolation: boolean;
@@ -20,8 +25,6 @@ const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const ZALO_FB_REGEX = /(zalo|facebook|fb)\s*[:.]?\s*\S+/i;
 const TELEGRAM_REGEX = /(telegram|tele)\s*[:.]?\s*@\S+/i;
 
-const MAX_MESSAGES_PER_MINUTE = 20;
-const MIN_INTERVAL_MS = 600;
 const DUPLICATE_WINDOW_MS = 5000;
 
 interface SpamEntry {
@@ -34,8 +37,16 @@ interface SpamEntry {
 export class ModerationService {
   private readonly logger = new Logger(ModerationService.name);
   private readonly spamTracker = new Map<string, SpamEntry>();
+  private readonly maxMessagesPerMinute: number;
+  private readonly minIntervalMs: number;
 
-  constructor(private readonly moderationRepository: ModerationRepository) {}
+  constructor(
+    private readonly moderationRepository: ModerationRepository,
+    config: ConfigService,
+  ) {
+    this.maxMessagesPerMinute = getMaxMessagesPerMinute(config);
+    this.minIntervalMs = getMinMessageIntervalMs(config);
+  }
 
   /** Kiểm duyệt text + anti-spam */
   moderateMessage(userId: string, roomId: string, text: string): ModerationResult {
@@ -97,14 +108,14 @@ export class ModerationService {
 
     // Khoảng cách tối thiểu giữa 2 tin
     const lastTs = entry.timestamps[entry.timestamps.length - 1];
-    if (lastTs && now - lastTs < MIN_INTERVAL_MS) {
+    if (lastTs && now - lastTs < this.minIntervalMs) {
       return { isViolation: true, reason: 'Bạn gửi tin quá nhanh, hãy chậm lại', severity: 'warn' };
     }
 
     entry.timestamps = entry.timestamps.filter((t) => now - t < 60_000);
     entry.timestamps.push(now);
 
-    if (entry.timestamps.length > MAX_MESSAGES_PER_MINUTE) {
+    if (entry.timestamps.length > this.maxMessagesPerMinute) {
       return { isViolation: true, reason: 'Bạn gửi quá nhiều tin nhắn. Hãy chờ một lát.', severity: 'block' };
     }
 

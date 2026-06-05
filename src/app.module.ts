@@ -13,6 +13,7 @@ import { BlocklistModule } from './modules/blocklist/blocklist.module';
 import { GatewayModule } from './modules/gateway/gateway.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { resolveMongoUri } from './config/mongodb.util';
+import { getLimitRequest, getThrottleTtlMs } from './config/rate-limit.util';
 
 @Module({
   imports: [
@@ -27,8 +28,16 @@ import { resolveMongoUri } from './config/mongodb.util';
       }),
     }),
 
-    // Rate limiting toàn cục
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
+    // Rate limiting toàn cục — LIMIT_REQUEST (mặc định 200 req / 60s / IP)
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: getThrottleTtlMs(),
+          limit: getLimitRequest(config),
+        },
+      ],
+    }),
 
     // Feature modules
     AuthModule,
