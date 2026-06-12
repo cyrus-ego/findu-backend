@@ -1,0 +1,56 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: findu-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: findu-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: findu-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      MONGODB_URI: mongodb://mongo:27017/strangerconfide
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-strangerconfide_dev_jwt_secret_2026}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-strangerconfide_dev_refresh_secret_2026}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      UPLOAD_DEST: ${UPLOAD_DEST:-./uploads}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-5}
+      LIMIT_REQUEST: ${LIMIT_REQUEST:-6000}
+      MAX_MESSAGES_PER_MINUTE: ${MAX_MESSAGES_PER_MINUTE:-60}
+      MIN_MESSAGE_INTERVAL_MS: ${MIN_MESSAGE_INTERVAL_MS:-500}
+    depends_on:
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+    volumes:
+      - app-uploads:/app/uploads
+
+volumes:
+  mongo-data:
+  redis-data:
+  app-uploads:
