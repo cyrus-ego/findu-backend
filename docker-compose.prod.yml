@@ -1,0 +1,52 @@
+# Production: pull pre-built image from GHCR (built by GitHub Actions).
+# Usage on VPS:
+#   export APP_IMAGE_TAG=latest   # or sha-abc1234 / v1.0.0
+#   docker compose -f docker-compose.prod.yml pull app
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: findu-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: findu-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+
+  app:
+    image: ghcr.io/cyrus-ego/findu-backend:${APP_IMAGE_TAG:-latest}
+    container_name: findu-app
+    restart: unless-stopped
+    pull_policy: always
+    ports:
+      - "3001:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: mongodb://mongo:27017/strangerconfide
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+    volumes:
+      - app-uploads:/app/uploads
+
+volumes:
+  mongo-data:
+  redis-data:
+  app-uploads:
