@@ -72,8 +72,14 @@ jobs:
           fi
 
           mkdir -p ~/.ssh
-          echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          umask 077
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
+            echo "::error::VPS_SSH_KEY không hợp lệ. Cần dán private key đầy đủ (-----BEGIN ... PRIVATE KEY-----)."
+            exit 1
+          fi
 
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=accept-new \
