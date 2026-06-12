@@ -58,50 +58,32 @@ jobs:
 
     steps:
       - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.0
         env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-        run: |
-          if [[ -z "$VPS_HOST" || -z "$VPS_USER" || -z "$VPS_SSH_KEY" ]]; then
-            echo "VPS secrets not configured — skip deploy."
-            exit 0
-          fi
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: GHCR_TOKEN,GHCR_USER,IMAGE_TAG,REPO,REF_NAME
+          script: |
+            set -euo pipefail
+            mkdir -p ~/dev/findu-backend
+            cd ~/dev/findu-backend
+            curl -fsSL \
+              "https://raw.githubusercontent.com/${REPO}/${REF_NAME}/docker-compose.prod.yml" \
+              -o docker-compose.prod.yml
 
-          mkdir -p ~/.ssh
-          umask 077
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+            if [[ -n "${GHCR_TOKEN:-}" ]]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin \
+                || echo "GHCR login failed — continuing (public image may still pull)"
+            fi
 
-          if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>&1; then
-            echo "::error::VPS_SSH_KEY không hợp lệ. Cần dán private key đầy đủ (-----BEGIN ... PRIVATE KEY-----)."
-            exit 1
-          fi
-
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=accept-new \
-            -o BatchMode=yes \
-            "${VPS_USER}@${VPS_HOST}" \
-            env GHCR_TOKEN="$GHCR_TOKEN" GHCR_USER="$GHCR_USER" IMAGE_TAG="$IMAGE_TAG" \
-              REPO="${{ github.repository }}" REF_NAME="${{ github.ref_name }}" \
-              bash -s <<'REMOTE'
-          set -euo pipefail
-          mkdir -p ~/dev/findu-backend
-          cd ~/dev/findu-backend
-          curl -fsSL \
-            "https://raw.githubusercontent.com/${REPO}/${REF_NAME}/docker-compose.prod.yml" \
-            -o docker-compose.prod.yml
-
-          if [[ -n "${GHCR_TOKEN:-}" ]]; then
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin \
-              || echo "::warning::GHCR login failed — continuing (public image may still pull)"
-          fi
-
-          export APP_IMAGE_TAG="${IMAGE_TAG}"
-          docker compose -f docker-compose.prod.yml pull app
-          docker compose -f docker-compose.prod.yml up -d
-          docker compose -f docker-compose.prod.yml ps
-          REMOTE
+            export APP_IMAGE_TAG="${IMAGE_TAG}"
+            docker compose -f docker-compose.prod.yml pull app
+            docker compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml ps
