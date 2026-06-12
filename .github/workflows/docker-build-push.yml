@@ -81,8 +81,11 @@ jobs:
             "${VPS_USER}@${VPS_HOST}" \
             "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_USER='${GHCR_USER}' IMAGE_TAG='${IMAGE_TAG}' bash -s" <<'REMOTE'
           set -euo pipefail
+          mkdir -p ~/dev/findu-backend
           cd ~/dev/findu-backend
-          git pull --ff-only
+          curl -fsSL \
+            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/docker-compose.prod.yml" \
+            -o docker-compose.prod.yml
 
           if [[ -n "${GHCR_TOKEN:-}" ]]; then
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
