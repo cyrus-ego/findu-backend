@@ -85,16 +85,19 @@ jobs:
             -o StrictHostKeyChecking=accept-new \
             -o BatchMode=yes \
             "${VPS_USER}@${VPS_HOST}" \
-            "GHCR_TOKEN='${GHCR_TOKEN}' GHCR_USER='${GHCR_USER}' IMAGE_TAG='${IMAGE_TAG}' bash -s" <<'REMOTE'
+            env GHCR_TOKEN="$GHCR_TOKEN" GHCR_USER="$GHCR_USER" IMAGE_TAG="$IMAGE_TAG" \
+              REPO="${{ github.repository }}" REF_NAME="${{ github.ref_name }}" \
+              bash -s <<'REMOTE'
           set -euo pipefail
           mkdir -p ~/dev/findu-backend
           cd ~/dev/findu-backend
           curl -fsSL \
-            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/docker-compose.prod.yml" \
+            "https://raw.githubusercontent.com/${REPO}/${REF_NAME}/docker-compose.prod.yml" \
             -o docker-compose.prod.yml
 
           if [[ -n "${GHCR_TOKEN:-}" ]]; then
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin \
+              || echo "::warning::GHCR login failed — continuing (public image may still pull)"
           fi
 
           export APP_IMAGE_TAG="${IMAGE_TAG}"
