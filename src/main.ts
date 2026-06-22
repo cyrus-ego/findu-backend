@@ -21,7 +21,16 @@ async function bootstrap() {
   app.useWebSocketAdapter(new CustomIoAdapter(app, config));
 
   // Bảo mật HTTP headers
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          'upgrade-insecure-requests': null,
+        },
+      },
+    }),
+  );
 
   // Phục vụ file upload (avatar)
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
