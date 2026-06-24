@@ -227,19 +227,28 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     const pairAcquired = await this.redis.set(pairKey, '1', 'EX', 15, 'NX');
     if (!pairAcquired) return false;
 
+    const entryKeyA = this.entryKey(userA);
+    const entryKeyB = this.entryKey(userB);
+
     try {
-      const [entryA, entryB] = await Promise.all([
-        this.getQueueEntry(userA),
-        this.getQueueEntry(userB),
+      await this.redis.watch(entryKeyA, entryKeyB);
+
+      const [rawEntryA, rawEntryB] = await Promise.all([
+        this.redis.get(entryKeyA),
+        this.redis.get(entryKeyB),
       ]);
 
-      if (!entryA || !entryB) return false;
+      if (!rawEntryA || !rawEntryB) {
+        await this.redis.unwatch();
+        return false;
+      }
 
       const multi = this.redis.multi();
       multi.zrem(QUEUE_ZSET, userA, userB);
-      multi.del(this.entryKey(userA), this.entryKey(userB));
+      multi.del(entryKeyA, entryKeyB);
       const results = await multi.exec();
 
+      // WATCH aborts the transaction if either queue entry was claimed by another matcher.
       if (!results) return false;
 
       this.logger.log(`Matched ${userA} <-> ${userB}`);
