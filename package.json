@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "nest build",
+    "seed:test-users": "node scripts/seed-test-users.js",
     "start": "node dist/main",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
