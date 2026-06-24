@@ -187,15 +187,18 @@ async function loginUser(baseUrl, email, password) {
     throw new Error(`Login failed for ${email}: HTTP ${res.status} ${JSON.stringify(body)}`);
   }
 
-  if (!body.accessToken) {
-    throw new Error(`Login response missing accessToken for ${email}`);
+  const authPayload = body?.data || body;
+  if (!authPayload?.accessToken) {
+    throw new Error(
+      `Login response missing accessToken for ${email}: ${JSON.stringify(body).slice(0, 500)}`,
+    );
   }
 
   return {
     email,
-    accessToken: body.accessToken,
-    refreshToken: body.refreshToken,
-    user: body.user,
+    accessToken: authPayload.accessToken,
+    refreshToken: authPayload.refreshToken,
+    user: authPayload.user,
   };
 }
 
