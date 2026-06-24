@@ -23,7 +23,7 @@ import { UserDocument } from '../user/entities/user.schema';
 import { toAuthTokenResponse } from './dto/auth-response.dto';
 import { isOAuthClientConfigured } from './oauth.util';
 
-/** Mã bypass tạm thời — OTP email sẽ hoàn thiện sau */
+/** Mã bypass tạm thời, chỉ dùng khi dev hoặc bật ALLOW_OTP_BYPASS=true */
 const OTP_BYPASS_CODE = '000000';
 
 @Injectable()
@@ -47,14 +47,13 @@ export class AuthService {
     const user = await this.userService.create({
       ...dto,
       password: passwordHash,
-      isEmailVerified: true, // TODO: set false sau khi implement gửi OTP
+      isEmailVerified: false,
     });
 
-    // TODO: Gửi OTP xác thực email — tạm thời bỏ qua
-    // await this.sendVerificationOtp(user.email);
+    await this.sendVerificationOtp(user.email);
 
     return {
-      message: 'Đăng ký thành công.',
+      message: 'Đăng ký thành công. Vui lòng kiểm tra email để xác thực.',
       email: user.email,
     };
   }
