@@ -74,7 +74,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Throttle({ default: { ttl: 60000, limit: 101 } })
   @ApiOperation({ summary: 'Đăng nhập email/password' })
   @ApiSuccessResponse(AuthTokenResponseDto)
   @ApiStandardErrors()

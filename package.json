@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "nest build",
+    "load:test-chat": "node scripts/load-test-chat.js",
     "seed:test-users": "node scripts/seed-test-users.js",
     "start": "node dist/main",
     "start:dev": "nest start --watch",
@@ -48,6 +49,7 @@
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",
     "socket.io": "^4.7.0",
+    "socket.io-client": "^4.7.0",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^9.0.0"
   },
