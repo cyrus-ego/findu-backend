@@ -41,6 +41,15 @@ export class MailService {
         from,
         to: email,
         subject: '[StrangerConfide] Mã xác thực email của bạn',
+        text: [
+          'StrangerConfide',
+          '',
+          `Mã xác thực email của bạn là: ${otp}`,
+          'Nếu không thấy OTP, hãy kiểm tra trong Spam/Thư rác.',
+          'Mã có hiệu lực trong 10 phút. Không chia sẻ mã này với ai.',
+          '',
+          'Nếu bạn không yêu cầu mã này, hãy bỏ qua email.',
+        ].join('\n'),
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
             <h2 style="color: #6d28d9;">StrangerConfide</h2>
