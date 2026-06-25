@@ -221,7 +221,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Xóa cả hai khỏi queue trong một transaction */
+  /** Xóa cả hai khỏi queue bằng Lua script atomic để tránh claim trùng khi tải cao */
   private async claimPair(userA: string, userB: string): Promise<boolean> {
     const pairKey = this.pairLockKey(userA, userB);
     const pairAcquired = await this.redis.set(pairKey, '1', 'EX', 15, 'NX');
@@ -230,27 +230,27 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     const entryKeyA = this.entryKey(userA);
     const entryKeyB = this.entryKey(userB);
 
+    const claimScript = `
+      if redis.call("EXISTS", KEYS[1]) == 0 or redis.call("EXISTS", KEYS[2]) == 0 then
+        return 0
+      end
+      redis.call("ZREM", KEYS[3], ARGV[1], ARGV[2])
+      redis.call("DEL", KEYS[1], KEYS[2])
+      return 1
+    `;
+
     try {
-      await this.redis.watch(entryKeyA, entryKeyB);
+      const claimed = await this.redis.eval(
+        claimScript,
+        3,
+        entryKeyA,
+        entryKeyB,
+        QUEUE_ZSET,
+        userA,
+        userB,
+      );
 
-      const [rawEntryA, rawEntryB] = await Promise.all([
-        this.redis.get(entryKeyA),
-        this.redis.get(entryKeyB),
-      ]);
-
-      if (!rawEntryA || !rawEntryB) {
-        await this.redis.unwatch();
-        return false;
-      }
-
-      const multi = this.redis.multi();
-      multi.zrem(QUEUE_ZSET, userA, userB);
-      multi.del(entryKeyA, entryKeyB);
-      const results = await multi.exec();
-
-      // WATCH aborts the transaction if either queue entry was claimed by another matcher.
-      if (!results) return false;
-
+      if (claimed !== 1) return false;
       this.logger.log(`Matched ${userA} <-> ${userB}`);
       return true;
     } finally {

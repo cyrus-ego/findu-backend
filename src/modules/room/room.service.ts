@@ -16,6 +16,8 @@ export class RoomService {
   constructor(private readonly roomRepository: RoomRepository) {}
 
   async createRoom(participantIds: string[]) {
+    await this.roomRepository.closeActiveByParticipants(participantIds);
+
     const roomId = uuidv4();
     const anonymousNames: Record<string, string> = {};
     const anonymousAvatars: Record<string, string> = {};

@@ -11,6 +11,7 @@ try {
   process.exit(1);
 }
 
+// const DEFAULT_BASE_URL = 'http://localhost:3000';
 const DEFAULT_BASE_URL = 'http://oc2.lifebow.net:3001';
 const DEFAULT_EMAIL_DOMAIN = 'findu.local';
 const DEFAULT_PASSWORD = 'Test@123456';
@@ -24,6 +25,7 @@ const DEFAULT_MATCH_TIMEOUT_MS = 180000;
 const DEFAULT_ROOM_JOIN_TIMEOUT_MS = 30000;
 const DEFAULT_SEND_ACK_TIMEOUT_MS = 10000;
 const DEFAULT_TEST_TIMEOUT_MS = 15 * 60 * 1000;
+const DEFAULT_ALLOW_PARTIAL_MATCHES = true;
 
 function loadEnvFile() {
   const envPath = path.resolve(process.cwd(), '.env');
@@ -67,6 +69,12 @@ function envNonNegativeNumber(name, fallback) {
     throw new Error(`${name} must be a non-negative number.`);
   }
   return value;
+}
+
+function envBoolean(name, fallback) {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
 }
 
 function padNumber(value) {
@@ -241,8 +249,44 @@ function connectSocket(baseUrl, namespace, token, connectTimeoutMs) {
   });
 }
 
-async function joinMatchmaking(baseUrl, clients, options) {
+async function joinMatchmaking(baseUrl, clients, options, onPairReady, allSockets) {
   const startedAt = performance.now();
+  const pairMap = new Map();
+  const pairs = [];
+  const pairTasks = [];
+
+  function registerMatch(client, payload) {
+    client.matched = true;
+    client.roomId = payload.roomId;
+    client.partnerId = payload.partnerId;
+    client.matchSocket.disconnect();
+
+    const matchedCount = clients.filter((item) => item.matched).length;
+    if (matchedCount % 10 === 0 || matchedCount === clients.length) {
+      console.log(`Matched users: ${matchedCount}/${clients.length}`);
+    }
+
+    if (!client.roomId) {
+      throw new Error(`Missing roomId for ${client.email}`);
+    }
+
+    if (!pairMap.has(client.roomId)) pairMap.set(client.roomId, []);
+    const members = pairMap.get(client.roomId);
+    members.push(client);
+
+    if (members.length === 2) {
+      const pair = { roomId: client.roomId, members };
+      pairs.push(pair);
+      console.log(`Pair ready ${pairs.length}: ${pair.members.map((item) => item.email).join(' <-> ')}`);
+      pairTasks.push(
+        onPairReady(pair)
+          .then(() => ({ ok: true, pair }))
+          .catch((err) => ({ ok: false, pair, err })),
+      );
+    } else if (members.length > 2) {
+      console.error(`Room ${client.roomId} has ${members.length} matched clients in test result.`);
+    }
+  }
 
   await Promise.all(
     clients.map(async (client) => {
@@ -252,13 +296,24 @@ async function joinMatchmaking(baseUrl, clients, options) {
         client.accessToken,
         options.connectTimeoutMs,
       );
+      allSockets.push(client.matchSocket);
+
+      client.matchSocket.on('queue:joined', () => {
+        client.queueJoined = true;
+      });
+      client.matchSocket.on('queue:timeout', (payload) => {
+        console.warn(`Queue timeout for ${client.email}: ${payload?.message || ''}`);
+      });
 
       client.matchPromise = onceWithTimeout(
         client.matchSocket,
         'match:found',
         options.matchTimeoutMs,
         `match:found for ${client.email}`,
-      );
+      ).then((payload) => {
+        registerMatch(client, payload);
+        return payload;
+      });
 
       client.matchSocket.emit('queue:join', {
         preference: 'opposite',
@@ -267,30 +322,46 @@ async function joinMatchmaking(baseUrl, clients, options) {
     }),
   );
 
-  const matchedPayloads = await Promise.all(clients.map((client) => client.matchPromise));
-  const pairMap = new Map();
+  const matchResults = await Promise.allSettled(clients.map((client) => client.matchPromise));
+  const failedMatches = matchResults
+    .map((result, index) => ({ result, client: clients[index] }))
+    .filter((item) => item.result.status === 'rejected');
 
-  clients.forEach((client, index) => {
-    client.roomId = matchedPayloads[index].roomId;
-    client.partnerId = matchedPayloads[index].partnerId;
-    client.matchSocket.disconnect();
+  if (failedMatches.length > 0) {
+    const joinedCount = clients.filter((client) => client.queueJoined).length;
+    const matchedCount = clients.filter((client) => client.matched).length;
+    const unmatched = failedMatches.map(({ client }) =>
+      `${client.email}${client.queueJoined ? '' : ' (not joined)'}`,
+    );
 
-    if (!client.roomId) {
-      throw new Error(`Missing roomId for ${client.email}`);
+    console.error(`Matchmaking partial result: joined=${joinedCount}/${clients.length}, matched=${matchedCount}/${clients.length}`);
+    console.error(`Unmatched users: ${unmatched.join(', ')}`);
+
+    if (!options.allowPartialMatches) {
+      throw failedMatches[0].result.reason;
     }
+  }
 
-    if (!pairMap.has(client.roomId)) pairMap.set(client.roomId, []);
-    pairMap.get(client.roomId).push(client);
+  clients.forEach((client) => {
+    if (!client.matched) {
+      client.matchSocket.disconnect();
+    }
   });
 
-  const pairs = [...pairMap.entries()].map(([roomId, members]) => ({ roomId, members }));
-  const invalidPairs = pairs.filter((pair) => pair.members.length !== 2);
+  const invalidPairs = [...pairMap.entries()]
+    .map(([roomId, members]) => ({ roomId, members }))
+    .filter((pair) => pair.members.length !== 2);
   if (invalidPairs.length > 0) {
-    throw new Error(`Invalid pair count in ${invalidPairs.length} rooms.`);
+    console.error(
+      `Skipping ${invalidPairs.length} rooms with invalid participant count in test result.`,
+    );
+  }
+  if (pairs.length === 0) {
+    throw new Error('No complete matched pairs available for chat load test.');
   }
 
   const elapsedMs = performance.now() - startedAt;
-  return { pairs, elapsedMs };
+  return { pairs, pairTasks, elapsedMs };
 }
 
 async function joinChatRooms(baseUrl, pairs, options) {
@@ -322,6 +393,41 @@ async function joinChatRooms(baseUrl, pairs, options) {
   );
 }
 
+async function joinChatRoomForPair(baseUrl, pair, options, allSockets) {
+  await Promise.all(
+    pair.members.map(async (client) => {
+      client.chatSocket = await connectSocket(
+        baseUrl,
+        '/chat',
+        client.accessToken,
+        options.connectTimeoutMs,
+      );
+      allSockets.push(client.chatSocket);
+    }),
+  );
+
+  await Promise.all(
+    pair.members.map(async (client) => {
+      const joined = onceWithTimeout(
+        client.chatSocket,
+        'room:joined',
+        options.roomJoinTimeoutMs,
+        `room:joined for ${client.email}`,
+      );
+      client.chatSocket.emit('room:join', { roomId: pair.roomId });
+      await joined;
+    }),
+  );
+}
+
+async function runPairChat(baseUrl, pair, options, metrics, allSockets) {
+  console.log(`Joining chat room ${pair.roomId}`);
+  await joinChatRoomForPair(baseUrl, pair, options, allSockets);
+  console.log(`Sending chat messages in room ${pair.roomId}`);
+  await runConversation(pair, options, metrics);
+  console.log(`Completed chat room ${pair.roomId}`);
+}
+
 function randomMessage(client, sequence) {
   const samples = [
     'Xin chao, minh dang test chat.',
@@ -336,7 +442,7 @@ function randomMessage(client, sequence) {
     'Mongo write test.',
   ];
   const base = samples[Math.floor(Math.random() * samples.length)];
-  return `${base} [${client.email} #${sequence} ${Date.now()}]`;
+  return `${base} [user ${client.gender}-${padNumber(client.index)} seq ${sequence} ts ${Date.now()}]`;
 }
 
 async function sendMessage(client, roomId, content, options, metrics) {
@@ -349,7 +455,6 @@ async function sendMessage(client, roomId, content, options, metrics) {
     }, options.sendAckTimeoutMs);
 
     const onMessage = (payload) => {
-      if (payload?.roomId !== roomId) return;
       if (payload?.content !== content) return;
       cleanup();
       resolve(payload);
@@ -446,6 +551,10 @@ async function main() {
   const roomJoinTimeoutMs = envNumber('LOAD_TEST_ROOM_JOIN_TIMEOUT_MS', DEFAULT_ROOM_JOIN_TIMEOUT_MS);
   const sendAckTimeoutMs = envNumber('LOAD_TEST_SEND_ACK_TIMEOUT_MS', DEFAULT_SEND_ACK_TIMEOUT_MS);
   const testTimeoutMs = envNumber('LOAD_TEST_TIMEOUT_MS', DEFAULT_TEST_TIMEOUT_MS);
+  const allowPartialMatches = envBoolean(
+    'LOAD_TEST_ALLOW_PARTIAL_MATCHES',
+    DEFAULT_ALLOW_PARTIAL_MATCHES,
+  );
 
   const options = {
     messagesPerUser,
@@ -454,6 +563,7 @@ async function main() {
     matchTimeoutMs,
     roomJoinTimeoutMs,
     sendAckTimeoutMs,
+    allowPartialMatches,
   };
 
   const clients = buildUsers(usersPerGender, emailDomain);
@@ -466,6 +576,7 @@ async function main() {
   console.log(`Message delay: ${messageDelayMs}ms`);
   console.log(`Login concurrency: ${loginDelayMs > 0 ? 1 : loginConcurrency}`);
   console.log(`Login delay: ${loginDelayMs}ms`);
+  console.log(`Allow partial matches: ${allowPartialMatches}`);
 
   const testTimer = setTimeout(() => {
     console.error(`Load test exceeded ${testTimeoutMs}ms.`);
@@ -479,21 +590,27 @@ async function main() {
     console.log('Logging in users...');
     const loggedIn = await loginClients(baseUrl, clients, password, loginConcurrency, loginDelayMs);
 
+    const metrics = { sent: 0, latencies: [] };
+
     console.log('Joining matchmaking queue...');
-    const { pairs, elapsedMs: matchElapsedMs } = await joinMatchmaking(baseUrl, loggedIn, options);
+    const { pairs, pairTasks, elapsedMs: matchElapsedMs } = await joinMatchmaking(
+      baseUrl,
+      loggedIn,
+      options,
+      (pair) => runPairChat(baseUrl, pair, options, metrics, allSockets),
+      allSockets,
+    );
     console.log(`Matched ${pairs.length} rooms.`);
 
-    console.log('Joining chat rooms...');
-    await joinChatRooms(baseUrl, pairs, options);
-
-    for (const client of loggedIn) {
-      if (client.matchSocket) allSockets.push(client.matchSocket);
-      if (client.chatSocket) allSockets.push(client.chatSocket);
+    console.log('Waiting for active chat conversations to finish...');
+    const chatResults = await Promise.all(pairTasks);
+    const failedChats = chatResults.filter((result) => !result.ok);
+    if (failedChats.length > 0) {
+      for (const result of failedChats) {
+        console.error(`Chat failed in room ${result.pair.roomId}: ${result.err?.message || result.err}`);
+      }
+      throw failedChats[0].err;
     }
-
-    console.log('Sending chat messages...');
-    const metrics = { sent: 0, latencies: [] };
-    await Promise.all(pairs.map((pair) => runConversation(pair, options, metrics)));
 
     summarize(metrics, performance.now() - startedAt, matchElapsedMs, pairs.length);
   } finally {

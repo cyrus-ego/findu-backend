@@ -38,4 +38,16 @@ export class RoomRepository {
       )
       .exec();
   }
+
+  async closeActiveByParticipants(participantIds: string[]): Promise<void> {
+    await this.roomModel
+      .updateMany(
+        {
+          participants: { $in: participantIds },
+          status: RoomStatus.ACTIVE,
+        },
+        { status: RoomStatus.CLOSED, closedAt: new Date() },
+      )
+      .exec();
+  }
 }
