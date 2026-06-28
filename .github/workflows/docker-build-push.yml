@@ -114,3 +114,9 @@ jobs:
             docker compose -f docker-compose.prod.yml pull app
             docker compose -f docker-compose.prod.yml up -d
             docker compose -f docker-compose.prod.yml ps
+
+            # Dọn dẹp các image cũ
+            echo "=== Cleaning up old images ==="
+            docker image prune -f --filter "until=24h"
+            # Xoá các image cũ của findu-backend, giữ lại 2 image gần nhất
+            docker image ls "ghcr.io/$REPO" -q | tail -n +3 | xargs -r docker image rm -f 2>/dev/null || true
