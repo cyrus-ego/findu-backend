@@ -57,6 +57,10 @@ export function isOriginAllowed(config: ConfigService, origin?: string): boolean
   if (getCorsAllowedOrigins(config).includes(origin)) {
     return true;
   }
+///Tam thoi CORS local
+  if(isLocalhostOrigin(origin)){
+    return true;
+  }
 
   if (isProductionEnv(config)) {
     return false;
