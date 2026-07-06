@@ -21,7 +21,11 @@ export const chatImageMulterOptions = {
     },
   }),
   limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10) * 1024 * 1024 },
-  fileFilter: (_req: any, file: Express.Multer.File, cb: (err: Error | null, accept: boolean) => void) => {
+  fileFilter: (
+    _req: any,
+    file: Express.Multer.File,
+    cb: (err: Error | null, accept: boolean) => void,
+  ) => {
     if (!ALLOWED_MIME.includes(file.mimetype)) {
       cb(new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG, WebP, GIF') as any, false);
       return;

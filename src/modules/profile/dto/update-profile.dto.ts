@@ -25,8 +25,4 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsEnum(ChatPreference, { message: 'Preference không hợp lệ' })
   chatPreference?: ChatPreference;
-
-  @IsOptional()
-  @IsEnum(Gender, { message: 'Giới tính ưu tiên không hợp lệ' })
-  preferredGender?: Gender;
 }

@@ -103,10 +103,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('room:join')
-  async handleJoinRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { roomId: string },
-  ) {
+  async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { roomId: string }) {
     const userId = (client as any).userId as string | undefined;
     if (!userId) {
       client.emit('error', { message: 'Chưa xác thực' });
@@ -117,7 +114,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const room = await this.roomService.getRoom(data.roomId);
       if (!this.roomService.isParticipant(room, userId)) {
         // Emit event riêng để frontend có thể redirect chính xác thay vì hiển thị lỗi generic.
-        client.emit('room:access_denied', { roomId: data.roomId, message: 'Không có quyền vào phòng này' });
+        client.emit('room:access_denied', {
+          roomId: data.roomId,
+          message: 'Không có quyền vào phòng này',
+        });
         return;
       }
       this.setCachedRoom(data.roomId, room);
@@ -155,15 +155,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.to(data.roomId).emit('room:presence', { userId, online: true });
     } catch {
       // Phòng không tồn tại hoặc đã đóng — emit access_denied để frontend xóa cookie stale.
-      client.emit('room:access_denied', { roomId: data.roomId, message: 'Phòng không tồn tại hoặc đã đóng' });
+      client.emit('room:access_denied', {
+        roomId: data.roomId,
+        message: 'Phòng không tồn tại hoặc đã đóng',
+      });
     }
   }
 
   @SubscribeMessage('chat:send')
-  async handleSendMessage(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() dto: SendMessageDto,
-  ) {
+  async handleSendMessage(@ConnectedSocket() client: Socket, @MessageBody() dto: SendMessageDto) {
     const userId = (client as any).userId as string | undefined;
     if (!userId) return;
 
@@ -173,7 +173,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      const room = this.getCachedRoom(dto.roomId) ?? await this.roomService.getRoom(dto.roomId);
+      const room = this.getCachedRoom(dto.roomId) ?? (await this.roomService.getRoom(dto.roomId));
       this.ensureSocketJoinedRoom(client, dto.roomId, userId);
       const partnerId = this.roomService.getPartnerUserId(room, userId);
       if (partnerId && (await this.blocklistService.isBlocked(userId, partnerId))) {

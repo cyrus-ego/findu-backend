@@ -56,8 +56,7 @@ export class TransformInterceptor<T> implements NestInterceptor<T, ApiResponse<T
           success: true,
           statusCode,
           code: envelope.code ?? (isCreated ? ApiCode.CREATED : ApiCode.OK),
-          message:
-            envelope.message ?? (isCreated ? DEFAULT_CREATED_MESSAGE : DEFAULT_OK_MESSAGE),
+          message: envelope.message ?? (isCreated ? DEFAULT_CREATED_MESSAGE : DEFAULT_OK_MESSAGE),
           data: (envelope.data ?? null) as T | null,
           errors: null,
           meta: envelope.meta ?? null,

@@ -45,12 +45,8 @@ export class CustomIoAdapter extends IoAdapter {
       subClient = new Redis({ host: redisHost, port: redisPort, password: redisPassword });
     }
 
-    pubClient.on('error', (err) =>
-      this.logger.error(`Redis pub error: ${err.message}`, err.stack),
-    );
-    subClient.on('error', (err) =>
-      this.logger.error(`Redis sub error: ${err.message}`, err.stack),
-    );
+    pubClient.on('error', (err) => this.logger.error(`Redis pub error: ${err.message}`, err.stack));
+    subClient.on('error', (err) => this.logger.error(`Redis sub error: ${err.message}`, err.stack));
     pubClient.on('connect', () => this.logger.log('Redis pub connected'));
     subClient.on('connect', () => this.logger.log('Redis sub connected'));
 

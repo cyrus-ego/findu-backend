@@ -10,8 +10,20 @@ export interface ModerationResult {
 
 /** Từ cấm cơ bản — mở rộng qua admin sau */
 const BANNED_WORDS = [
-  'địt', 'đụ', 'lồn', 'cặc', 'buồi', 'đéo', 'vcl', 'vl', 'cc', 'cl',
-  'fuck', 'shit', 'bitch', 'asshole',
+  'địt',
+  'đụ',
+  'lồn',
+  'cặc',
+  'buồi',
+  'đéo',
+  'vcl',
+  'vl',
+  'cc',
+  'cl',
+  'fuck',
+  'shit',
+  'bitch',
+  'asshole',
 ];
 
 const PHONE_REGEX = /(0|\+84)(3[2-9]|5[6-9]|7[06-9]|8[1-9]|9[0-9])\d{7}/;
@@ -54,7 +66,11 @@ export class ModerationService {
     for (const word of BANNED_WORDS) {
       if (lower.includes(word)) {
         this.logger.warn(`Từ cấm: "${word}"`);
-        return { isViolation: true, reason: 'Nội dung không phù hợp với quy tắc cộng đồng', severity: 'warn' };
+        return {
+          isViolation: true,
+          reason: 'Nội dung không phù hợp với quy tắc cộng đồng',
+          severity: 'warn',
+        };
       }
     }
 
@@ -68,10 +84,18 @@ export class ModerationService {
       return { isViolation: true, reason: 'Không được chia sẻ email', severity: 'warn' };
     }
     if (ZALO_FB_REGEX.test(lower)) {
-      return { isViolation: true, reason: 'Không được chia sẻ thông tin liên hệ mạng xã hội', severity: 'warn' };
+      return {
+        isViolation: true,
+        reason: 'Không được chia sẻ thông tin liên hệ mạng xã hội',
+        severity: 'warn',
+      };
     }
     if (TELEGRAM_REGEX.test(lower)) {
-      return { isViolation: true, reason: 'Không được chia sẻ thông tin liên hệ', severity: 'warn' };
+      return {
+        isViolation: true,
+        reason: 'Không được chia sẻ thông tin liên hệ',
+        severity: 'warn',
+      };
     }
 
     return { isViolation: false };
@@ -88,10 +112,7 @@ export class ModerationService {
     }
 
     // Chống gửi trùng liên tiếp
-    if (
-      entry.lastContent === text.trim() &&
-      now - entry.lastContentAt < DUPLICATE_WINDOW_MS
-    ) {
+    if (entry.lastContent === text.trim() && now - entry.lastContentAt < DUPLICATE_WINDOW_MS) {
       return { isViolation: true, reason: 'Không gửi tin nhắn trùng lặp', severity: 'warn' };
     }
 
@@ -105,7 +126,11 @@ export class ModerationService {
     entry.timestamps.push(now);
 
     if (entry.timestamps.length > MAX_MESSAGES_PER_MINUTE) {
-      return { isViolation: true, reason: 'Bạn gửi quá nhiều tin nhắn. Hãy chờ một lát.', severity: 'block' };
+      return {
+        isViolation: true,
+        reason: 'Bạn gửi quá nhiều tin nhắn. Hãy chờ một lát.',
+        severity: 'block',
+      };
     }
 
     entry.lastContent = text.trim();

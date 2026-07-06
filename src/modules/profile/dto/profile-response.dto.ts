@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ProfileDocument } from '../entities/profile.schema';
+import { ChatPreference, Gender, ProfileDocument } from '../entities/profile.schema';
 import { UserDocument } from '../../user/entities/user.schema';
 
 export class ProfileUserSummaryDto {
@@ -38,11 +38,8 @@ export class ProfileDataDto {
   @ApiProperty({ example: 'http://localhost:3000/uploads/avatars/abc.jpg' })
   avatar: string;
 
-  @ApiProperty({ example: 'any', enum: ['opposite', 'same', 'any'] })
+  @ApiProperty({ example: 'female', enum: ['male', 'female', 'other'] })
   chatPreference: string;
-
-  @ApiPropertyOptional({ example: 'female', enum: ['male', 'female', 'other'] })
-  preferredGender?: string;
 
   @ApiProperty({ example: false })
   isVip: boolean;
@@ -108,8 +105,7 @@ export function toProfileResponse(
           age: profile.age,
           bio: profile.bio || '',
           avatar: profile.avatar || user.avatar || '',
-          chatPreference: profile.chatPreference,
-          preferredGender: profile.preferredGender,
+          chatPreference: normalizeChatPreference(profile),
           isVip: profile.isVip,
           vipExpiresAt: profile.vipExpiresAt ? toIsoDate(profile.vipExpiresAt) : null,
           createdAt: toIsoDate((profile as any).createdAt),
@@ -118,4 +114,33 @@ export function toProfileResponse(
       : null,
     isComplete: !!(profile?.gender && profile?.age),
   };
+}
+
+function normalizeChatPreference(profile: ProfileDocument): ChatPreference {
+  const chatPreference = profile.chatPreference as string | undefined;
+  if (isNewChatPreference(chatPreference)) return chatPreference;
+
+  const legacyPreferredGender = (profile as unknown as { preferredGender?: string })
+    .preferredGender;
+  if (isNewChatPreference(legacyPreferredGender)) return legacyPreferredGender;
+
+  if (chatPreference === 'same' && isNewChatPreference(profile.gender)) {
+    return profile.gender;
+  }
+
+  if (chatPreference === 'opposite') {
+    if (profile.gender === Gender.MALE) return ChatPreference.FEMALE;
+    if (profile.gender === Gender.FEMALE) return ChatPreference.MALE;
+    return ChatPreference.OTHER;
+  }
+
+  return ChatPreference.FEMALE;
+}
+
+function isNewChatPreference(value?: string): value is ChatPreference {
+  return (
+    value === ChatPreference.MALE ||
+    value === ChatPreference.FEMALE ||
+    value === ChatPreference.OTHER
+  );
 }

@@ -12,6 +12,7 @@
     "start:debug": "nest start --debug --watch",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\"",
+    "migrate:chat-preference": "node scripts/migrate-chat-preference.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

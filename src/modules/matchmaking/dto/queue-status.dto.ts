@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 /** Trạng thái hàng đợi ghép đôi — dùng runtime + Swagger */
 export class QueueStatusResponseDto {
@@ -17,11 +17,8 @@ export class QueueStatusResponseDto {
   @ApiProperty({ example: 255, description: 'Số giây còn lại trước timeout 5 phút' })
   expiresInSeconds: number;
 
-  @ApiProperty({ example: 'any', enum: ['opposite', 'same', 'any'] })
+  @ApiProperty({ example: 'female', enum: ['male', 'female', 'other'] })
   preference: string;
-
-  @ApiPropertyOptional({ example: 'female', enum: ['male', 'female', 'other'] })
-  preferredGender?: string;
 
   @ApiProperty({ example: false })
   timedOut: boolean;

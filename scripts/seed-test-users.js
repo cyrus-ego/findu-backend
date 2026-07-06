@@ -73,7 +73,7 @@ function buildUserAndProfile({ gender, index, passwordHash, emailDomain, now }) 
     age: 18 + ((index - 1) % 18),
     bio: `Seeded ${gender} test profile ${number}`,
     avatar: '',
-    chatPreference: 'any',
+    chatPreference: gender === 'male' ? 'female' : 'male',
     isVip: false,
     vipExpiresAt: null,
     createdAt: now,

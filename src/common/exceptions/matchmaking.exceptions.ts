@@ -7,7 +7,8 @@ export class ProfileIncompleteException extends AppException {
     super(
       {
         code: ApiCode.PROFILE_INCOMPLETE,
-        message: 'Hồ sơ chưa hoàn thiện. Vui lòng cập nhật giới tính và tuổi trước khi tìm người tâm sự.',
+        message:
+          'Hồ sơ chưa hoàn thiện. Vui lòng cập nhật giới tính và tuổi trước khi tìm người tâm sự.',
       },
       HttpStatus.BAD_REQUEST,
     );
@@ -26,7 +27,10 @@ export class NotInQueueException extends AppException {
 export class QueueTimeoutException extends AppException {
   constructor() {
     super(
-      { code: ApiCode.MATCHMAKING_TIMEOUT, message: 'Hết thời gian chờ (5 phút). Vui lòng thử lại.' },
+      {
+        code: ApiCode.MATCHMAKING_TIMEOUT,
+        message: 'Hết thời gian chờ (5 phút). Vui lòng thử lại.',
+      },
       HttpStatus.REQUEST_TIMEOUT,
     );
   }

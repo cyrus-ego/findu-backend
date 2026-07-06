@@ -48,7 +48,9 @@ async function bootstrap() {
   const production = isProductionEnv(config);
   console.log(
     `🔒 CORS (${production ? 'production — allow-list' : 'development — allow-list + localhost + ngrok'}):`,
-    allowedOrigins.length ? allowedOrigins.join(', ') : '(chưa cấu hình FRONTEND_URL / CORS_ORIGINS)',
+    allowedOrigins.length
+      ? allowedOrigins.join(', ')
+      : '(chưa cấu hình FRONTEND_URL / CORS_ORIGINS)',
   );
 
   // Validation toàn cục — gắn code VALIDATION_ERROR + giữ nguyên list message

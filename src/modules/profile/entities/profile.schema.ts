@@ -10,9 +10,9 @@ export enum Gender {
 }
 
 export enum ChatPreference {
-  OPPOSITE = 'opposite',
-  SAME = 'same',
-  ANY = 'any',
+  MALE = 'male',
+  FEMALE = 'female',
+  OTHER = 'other',
 }
 
 @Schema({ timestamps: true })
@@ -32,11 +32,8 @@ export class Profile {
   @Prop({ default: '' })
   avatar: string;
 
-  @Prop({ type: String, enum: ChatPreference, default: ChatPreference.ANY })
+  @Prop({ type: String, enum: ChatPreference, default: ChatPreference.FEMALE })
   chatPreference: ChatPreference;
-
-  @Prop({ type: String, enum: Gender })
-  preferredGender: Gender;
 
   // Giả lập VIP
   @Prop({ default: false })

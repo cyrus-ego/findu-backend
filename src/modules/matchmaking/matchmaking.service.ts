@@ -1,9 +1,18 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { JoinQueueDto } from './dto/join-queue.dto';
 import { QueueStatusResponseDto, MatchResult } from './dto/queue-status.dto';
-import { ProfileIncompleteException, NotInQueueException } from '../../common/exceptions/matchmaking.exceptions';
+import {
+  ProfileIncompleteException,
+  NotInQueueException,
+} from '../../common/exceptions/matchmaking.exceptions';
 import { ProfileService } from '../profile/profile.service';
 import { BlocklistService } from '../blocklist/blocklist.service';
 import { Gender, ChatPreference } from '../profile/entities/profile.schema';
@@ -19,7 +28,6 @@ export interface QueueEntry {
   userId: string;
   socketId: string;
   preference: ChatPreference;
-  preferredGender?: Gender | 'any';
   gender: Gender;
   joinedAt: number;
   expiresAt: number;
@@ -48,9 +56,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    this.redis.on('error', (err) =>
-      this.logger.error(`Redis error: ${err.message}`, err.stack),
-    );
+    this.redis.on('error', (err) => this.logger.error(`Redis error: ${err.message}`, err.stack));
     this.redis.on('connect', () => this.logger.log('Redis connected'));
   }
 
@@ -73,6 +79,8 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     socketId: string,
     dto: JoinQueueDto,
   ): Promise<QueueStatusResponseDto> {
+    this.assertValidPreference(dto.preference);
+
     const profile = await this.profileService.findByUserId(userId);
     if (!profile?.gender || !profile?.age) {
       throw new ProfileIncompleteException();
@@ -83,7 +91,6 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       // Cập nhật socketId nếu reconnect
       existing.socketId = socketId;
       existing.preference = dto.preference;
-      existing.preferredGender = dto.preferredGender;
       await this.saveEntry(userId, existing);
       return this.getStatus(userId);
     }
@@ -93,7 +100,6 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       userId,
       socketId,
       preference: dto.preference,
-      preferredGender: dto.preferredGender,
       gender: profile.gender,
       joinedAt: now,
       expiresAt: now + QUEUE_TIMEOUT_SEC * 1000,
@@ -133,7 +139,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
         queueSize: await this.getActiveQueueSize(),
         waitSeconds: 0,
         expiresInSeconds: 0,
-        preference: 'any',
+        preference: ChatPreference.FEMALE,
         timedOut: false,
       };
     }
@@ -148,7 +154,6 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
         waitSeconds: Math.floor((now - entry.joinedAt) / 1000),
         expiresInSeconds: 0,
         preference: entry.preference,
-        preferredGender: entry.preferredGender,
         timedOut: true,
       };
     }
@@ -162,7 +167,6 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
       waitSeconds: Math.floor((now - entry.joinedAt) / 1000),
       expiresInSeconds: Math.max(0, Math.floor((entry.expiresAt - now) / 1000)),
       preference: entry.preference,
-      preferredGender: entry.preferredGender,
       timedOut: false,
     };
   }
@@ -262,7 +266,13 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     const raw = await this.redis.get(this.entryKey(userId));
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as QueueEntry;
+      const entry = JSON.parse(raw) as QueueEntry;
+      if (!this.isValidPreference(entry.preference) || !this.isValidGender(entry.gender)) {
+        await this.redis.del(this.entryKey(userId));
+        await this.redis.zrem(QUEUE_ZSET, userId);
+        return null;
+      }
+      return entry;
     } catch {
       await this.redis.del(this.entryKey(userId));
       return null;
@@ -288,9 +298,7 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     await this.redis.setex(`matchmaking:pending:${userId}`, 120, JSON.stringify(data));
   }
 
-  async consumePendingMatch(
-    userId: string,
-  ): Promise<{ roomId: string; partnerId: string } | null> {
+  async consumePendingMatch(userId: string): Promise<{ roomId: string; partnerId: string } | null> {
     const key = `matchmaking:pending:${userId}`;
     const raw = await this.redis.get(key);
     if (!raw) return null;
@@ -339,38 +347,36 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Kiểm tra tương thích preference:
-   * - preferredGender: giới tính đối phương mong muốn
-   * - preference (chatPreference): opposite / same / any
+   * Hai user chỉ match khi mỗi người chọn đúng giới tính của đối phương.
    */
   private isCompatible(a: QueueEntry, b: QueueEntry): boolean {
     return (
-      this.satisfiesGenderFilter(a, b.gender) &&
-      this.satisfiesGenderFilter(b, a.gender) &&
-      this.satisfiesChatPreference(a, b.gender) &&
-      this.satisfiesChatPreference(b, a.gender)
+      a.preference === this.genderToPreference(b.gender) &&
+      b.preference === this.genderToPreference(a.gender)
     );
   }
 
-  private satisfiesGenderFilter(entry: QueueEntry, otherGender?: Gender): boolean {
-    const pref = entry.preferredGender;
-    if (!pref || pref === ('any' as Gender)) return true;
-    if (!otherGender) return false;
-    return pref === otherGender;
+  private genderToPreference(gender: Gender): ChatPreference {
+    if (gender === Gender.MALE) return ChatPreference.MALE;
+    if (gender === Gender.FEMALE) return ChatPreference.FEMALE;
+    return ChatPreference.OTHER;
   }
 
-  private satisfiesChatPreference(entry: QueueEntry, otherGender?: Gender): boolean {
-    if (!entry.preference || entry.preference === ChatPreference.ANY) return true;
-    if (!entry.gender || !otherGender) return true;
+  private assertValidPreference(preference: ChatPreference): void {
+    if (!this.isValidPreference(preference)) {
+      throw new BadRequestException('Preference không hợp lệ');
+    }
+  }
 
-    const opposite =
-      (entry.gender === Gender.MALE && otherGender === Gender.FEMALE) ||
-      (entry.gender === Gender.FEMALE && otherGender === Gender.MALE);
+  private isValidPreference(preference?: ChatPreference): preference is ChatPreference {
+    return (
+      preference === ChatPreference.MALE ||
+      preference === ChatPreference.FEMALE ||
+      preference === ChatPreference.OTHER
+    );
+  }
 
-    const same = entry.gender === otherGender;
-
-    if (entry.preference === ChatPreference.OPPOSITE) return opposite;
-    if (entry.preference === ChatPreference.SAME) return same;
-    return true;
+  private isValidGender(gender?: Gender): gender is Gender {
+    return gender === Gender.MALE || gender === Gender.FEMALE || gender === Gender.OTHER;
   }
 }

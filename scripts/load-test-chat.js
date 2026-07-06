@@ -316,8 +316,7 @@ async function joinMatchmaking(baseUrl, clients, options, onPairReady, allSocket
       });
 
       client.matchSocket.emit('queue:join', {
-        preference: 'opposite',
-        preferredGender: client.gender === 'male' ? 'female' : 'male',
+        preference: client.gender === 'male' ? 'female' : 'male',
       });
     }),
   );

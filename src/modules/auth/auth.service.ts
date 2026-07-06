@@ -145,7 +145,12 @@ export class AuthService {
       throw new BadRequestException('Facebook OAuth chưa được cấu hình trên server');
     }
 
-    let fbUser: { id?: string; name?: string; email?: string; picture?: { data?: { url?: string } } };
+    let fbUser: {
+      id?: string;
+      name?: string;
+      email?: string;
+      picture?: { data?: { url?: string } };
+    };
 
     try {
       const url = `https://graph.facebook.com/me?fields=id,name,email,picture&access_token=${encodeURIComponent(accessToken)}&appsecret_proof=${encodeURIComponent(await this.generateAppSecretProof(accessToken))}`;
@@ -177,7 +182,9 @@ export class AuthService {
   private async generateAppSecretProof(accessToken: string): Promise<string> {
     const { createHash } = await import('crypto');
     const appSecret = this.config.get<string>('FACEBOOK_APP_SECRET') || '';
-    return createHash('sha256').update(accessToken + appSecret).digest('hex');
+    return createHash('sha256')
+      .update(accessToken + appSecret)
+      .digest('hex');
   }
 
   /** Đăng nhập Google bằng idToken (mobile / native SDK) */
@@ -188,7 +195,9 @@ export class AuthService {
     }
 
     const client = new OAuth2Client();
-    let payload: { email?: string; email_verified?: boolean; name?: string; picture?: string } | undefined;
+    let payload:
+      | { email?: string; email_verified?: boolean; name?: string; picture?: string }
+      | undefined;
 
     try {
       const ticket = await client.verifyIdToken({
@@ -223,7 +232,10 @@ export class AuthService {
     if (primary) ids.add(primary);
 
     const extra = this.config.get<string>('GOOGLE_CLIENT_IDS', '');
-    for (const id of extra.split(',').map((s) => s.trim()).filter(Boolean)) {
+    for (const id of extra
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)) {
       ids.add(id);
     }
 
@@ -231,12 +243,7 @@ export class AuthService {
   }
 
   /** Đăng nhập qua OAuth (Google / Facebook) */
-  async oauthLogin(oauthUser: {
-    email: string;
-    name: string;
-    avatar?: string;
-    provider: string;
-  }) {
+  async oauthLogin(oauthUser: { email: string; name: string; avatar?: string; provider: string }) {
     let user = await this.userService.findByEmail(oauthUser.email);
     if (!user) {
       user = await this.userService.create({

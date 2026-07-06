@@ -10,6 +10,7 @@ import {
   ProfileAlreadyExistsException,
 } from '../../common/exceptions/profile.exceptions';
 import { UserDocument } from '../user/entities/user.schema';
+import { Profile } from './entities/profile.schema';
 
 @Injectable()
 export class ProfileService {
@@ -35,8 +36,7 @@ export class ProfileService {
       await this.userService.updateById(userId, { displayName: dto.displayName });
     }
 
-    const { displayName: _dn, ...profileData } = dto;
-    const profile = await this.profileRepository.create(userId, profileData);
+    const profile = await this.profileRepository.create(userId, this.toProfileData(dto));
 
     const updatedUser = (await this.userService.findById(userId))!;
     return toProfileResponse(updatedUser, profile);
@@ -50,8 +50,7 @@ export class ProfileService {
       await this.userService.updateById(userId, { displayName: dto.displayName });
     }
 
-    const { displayName: _dn, ...profileData } = dto;
-    const profile = await this.profileRepository.upsert(userId, profileData);
+    const profile = await this.profileRepository.upsert(userId, this.toProfileData(dto));
 
     const updatedUser = (await this.userService.findById(userId))!;
     return toProfileResponse(updatedUser, profile);
@@ -67,8 +66,7 @@ export class ProfileService {
       await this.userService.updateById(userId, { displayName: dto.displayName });
     }
 
-    const { displayName: _dn, ...profileData } = dto;
-    const profile = await this.profileRepository.updateByUserId(userId, profileData);
+    const profile = await this.profileRepository.updateByUserId(userId, this.toProfileData(dto));
     const updatedUser = (await this.userService.findById(userId))!;
 
     return toProfileResponse(updatedUser, profile);
@@ -112,5 +110,14 @@ export class ProfileService {
     const port = this.config.get<number>('PORT', 3000);
     const base = this.config.get<string>('APP_URL', `http://localhost:${port}`);
     return `${base}${path}`;
+  }
+
+  private toProfileData(dto: CreateProfileDto | UpdateProfileDto): Partial<Profile> {
+    const data: Partial<Profile> = {};
+    if (dto.gender !== undefined) data.gender = dto.gender;
+    if (dto.age !== undefined) data.age = dto.age;
+    if (dto.bio !== undefined) data.bio = dto.bio;
+    if (dto.chatPreference !== undefined) data.chatPreference = dto.chatPreference;
+    return data;
   }
 }

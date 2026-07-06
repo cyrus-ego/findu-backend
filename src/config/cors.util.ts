@@ -11,7 +11,10 @@ export function getCorsAllowedOrigins(config: ConfigService): string[] {
   }
 
   const extra = config.get<string>('CORS_ORIGINS', '');
-  for (const o of extra.split(',').map((s) => s.trim()).filter(Boolean)) {
+  for (const o of extra
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     origins.add(o);
   }
 
@@ -35,9 +38,7 @@ function isNgrokOrigin(origin: string): boolean {
   try {
     const host = new URL(origin).hostname;
     return (
-      host.endsWith('.ngrok-free.app') ||
-      host.endsWith('.ngrok.io') ||
-      host.endsWith('.ngrok.app')
+      host.endsWith('.ngrok-free.app') || host.endsWith('.ngrok.io') || host.endsWith('.ngrok.app')
     );
   } catch {
     return false;
@@ -57,8 +58,8 @@ export function isOriginAllowed(config: ConfigService, origin?: string): boolean
   if (getCorsAllowedOrigins(config).includes(origin)) {
     return true;
   }
-///Tam thoi CORS local
-  if(isLocalhostOrigin(origin)){
+  ///Tam thoi CORS local
+  if (isLocalhostOrigin(origin)) {
     return true;
   }
 

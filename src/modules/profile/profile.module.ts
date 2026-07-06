@@ -7,10 +7,7 @@ import { Profile, ProfileSchema } from './entities/profile.schema';
 import { UserModule } from '../user/user.module';
 
 @Module({
-  imports: [
-    UserModule,
-    MongooseModule.forFeature([{ name: Profile.name, schema: ProfileSchema }]),
-  ],
+  imports: [UserModule, MongooseModule.forFeature([{ name: Profile.name, schema: ProfileSchema }])],
   controllers: [ProfileController],
   providers: [ProfileService, ProfileRepository],
   exports: [ProfileService],

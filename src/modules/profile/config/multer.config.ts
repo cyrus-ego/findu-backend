@@ -23,7 +23,11 @@ export const avatarMulterOptions = {
     },
   }),
   limits: { fileSize: MAX_SIZE_MB * 1024 * 1024 },
-  fileFilter: (_req: any, file: Express.Multer.File, cb: (err: Error | null, accept: boolean) => void) => {
+  fileFilter: (
+    _req: any,
+    file: Express.Multer.File,
+    cb: (err: Error | null, accept: boolean) => void,
+  ) => {
     if (!ALLOWED_MIME.includes(file.mimetype)) {
       cb(new BadRequestException('Chỉ chấp nhận ảnh JPEG, PNG, WebP hoặc GIF') as any, false);
       return;

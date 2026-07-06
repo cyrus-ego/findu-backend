@@ -1,7 +1,10 @@
 import { RoomDocument } from './entities/room.schema';
 
 /** Lấy giá trị từ Mongoose Map hoặc plain object */
-export function getMapValue(map: Map<string, string> | Record<string, string> | undefined, key: string): string | undefined {
+export function getMapValue(
+  map: Map<string, string> | Record<string, string> | undefined,
+  key: string,
+): string | undefined {
   if (!map) return undefined;
   if (map instanceof Map) {
     return map.get(key) || map.get(String(key));

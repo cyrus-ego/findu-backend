@@ -21,10 +21,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserDocument } from '../user/entities/user.schema';
 import { avatarMulterOptions } from './config/multer.config';
 import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
-import {
-  ProfileAvatarUploadResponseDto,
-  ProfileResponseDto,
-} from './dto/profile-response.dto';
+import { ProfileAvatarUploadResponseDto, ProfileResponseDto } from './dto/profile-response.dto';
 import { MessageResponseDto } from '../../common/dto/message-response.dto';
 
 const MAX_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10);

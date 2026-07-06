@@ -1,14 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { RoomRepository } from './room.repository';
-import { generateAnonymousNickname, generateAnonymousAvatar } from '../../common/utils/nickname.util';
+import {
+  generateAnonymousNickname,
+  generateAnonymousAvatar,
+} from '../../common/utils/nickname.util';
 import { RoomNotFoundException } from '../../common/exceptions/app.exceptions';
 import { RoomDocument, RoomStatus } from './entities/room.schema';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  getParticipantAlias,
-  getParticipantAvatar,
-  getPartnerUserId,
-} from './room.utils';
+import { getParticipantAlias, getParticipantAvatar, getPartnerUserId } from './room.utils';
 import { RoomSessionDto } from './dto/room-session.dto';
 
 @Injectable()

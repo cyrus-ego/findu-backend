@@ -34,7 +34,10 @@ export class MailService {
       return;
     }
 
-    const from = this.config.get<string>('MAIL_FROM', 'StrangerConfide <noreply@strangerconfide.app>');
+    const from = this.config.get<string>(
+      'MAIL_FROM',
+      'StrangerConfide <noreply@strangerconfide.app>',
+    );
 
     try {
       await this.transporter.sendMail({

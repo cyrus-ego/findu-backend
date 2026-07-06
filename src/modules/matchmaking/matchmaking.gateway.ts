@@ -68,10 +68,7 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
   }
 
   @SubscribeMessage('queue:join')
-  async handleJoinQueue(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() dto: JoinQueueDto,
-  ) {
+  async handleJoinQueue(@ConnectedSocket() client: Socket, @MessageBody() dto: JoinQueueDto) {
     const userId = (client as any).userId;
     if (!userId) {
       client.emit('error', { message: 'Chưa xác thực' });

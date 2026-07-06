@@ -5,9 +5,7 @@ import { Profile, ProfileDocument } from './entities/profile.schema';
 
 @Injectable()
 export class ProfileRepository {
-  constructor(
-    @InjectModel(Profile.name) private readonly profileModel: Model<ProfileDocument>,
-  ) {}
+  constructor(@InjectModel(Profile.name) private readonly profileModel: Model<ProfileDocument>) {}
 
   async findByUserId(userId: string): Promise<ProfileDocument | null> {
     return this.profileModel.findOne({ userId: new Types.ObjectId(userId) }).exec();
@@ -22,7 +20,11 @@ export class ProfileRepository {
 
   async updateByUserId(userId: string, data: Partial<Profile>): Promise<ProfileDocument | null> {
     return this.profileModel
-      .findOneAndUpdate({ userId: new Types.ObjectId(userId) }, data, { new: true })
+      .findOneAndUpdate(
+        { userId: new Types.ObjectId(userId) },
+        { $set: data, $unset: { preferredGender: '' } },
+        { new: true, strict: false },
+      )
       .exec();
   }
 
@@ -30,16 +32,17 @@ export class ProfileRepository {
     return this.profileModel
       .findOneAndUpdate(
         { userId: new Types.ObjectId(userId) },
-        { ...data, userId: new Types.ObjectId(userId) },
-        { new: true, upsert: true },
+        {
+          $set: { ...data, userId: new Types.ObjectId(userId) },
+          $unset: { preferredGender: '' },
+        },
+        { new: true, upsert: true, strict: false },
       )
       .exec() as Promise<ProfileDocument>;
   }
 
   async deleteByUserId(userId: string): Promise<boolean> {
-    const result = await this.profileModel
-      .deleteOne({ userId: new Types.ObjectId(userId) })
-      .exec();
+    const result = await this.profileModel.deleteOne({ userId: new Types.ObjectId(userId) }).exec();
     return result.deletedCount > 0;
   }
 }
