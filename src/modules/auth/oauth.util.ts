@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { FacebookStrategy } from './strategies/facebook.strategy';
 
-/** Bỏ qua OAuth provider khi chưa cấu hình (deploy Railway không bắt buộc Facebook). */
+/** Bỏ qua OAuth provider khi chưa cấu hình đầy đủ. */
 export function isOAuthClientConfigured(clientId?: string): boolean {
   if (!clientId?.trim()) return false;
   const normalized = clientId.trim().toLowerCase();

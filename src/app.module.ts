@@ -14,10 +14,16 @@ import { GatewayModule } from './modules/gateway/gateway.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { resolveMongoUri } from './config/mongodb.util';
 
+const envFilePath =
+  process.env.ENV_FILE_PATH ||
+  (process.env.NODE_ENV === 'production'
+    ? ['.env.pod', '.env.prod', '.env']
+    : ['.env.dev', '.env']);
+
 @Module({
   imports: [
     // Config toàn cục
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ isGlobal: true, envFilePath }),
 
     // MongoDB
     MongooseModule.forRootAsync({

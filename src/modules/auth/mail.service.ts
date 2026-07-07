@@ -12,7 +12,7 @@ export class MailService {
       host: config.get<string>('MAIL_HOST', 'smtp.gmail.com'),
       port: config.get<number>('MAIL_PORT', 587),
       secure: false,
-      // Nodemailer mặc định connectionTimeout = 120s — Railway không ra SMTP sẽ block ~2 phút
+      // Giữ timeout ngắn để lỗi SMTP không block register flow quá lâu.
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 10_000,

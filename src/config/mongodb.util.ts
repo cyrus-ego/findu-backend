@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
-/** Chuẩn hóa URI MongoDB cho Railway (authSource=admin + tên database). */
+/** Chuẩn hóa URI MongoDB với authSource=admin + tên database khi thiếu. */
 export function resolveMongoUri(config: ConfigService): string {
   let uri = config.get<string>('MONGODB_URI') ?? config.get<string>('MONGO_URL');
   if (!uri?.trim()) {
