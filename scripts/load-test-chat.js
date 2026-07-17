@@ -12,7 +12,8 @@ try {
 }
 
 // const DEFAULT_BASE_URL = 'http://localhost:3000';
-const DEFAULT_BASE_URL = 'http://oc2.lifebow.net:3001';
+// const DEFAULT_BASE_URL = 'http://oc2.lifebow.net:3001';
+const DEFAULT_BASE_URL = 'https://api.chatvn.online';
 const DEFAULT_EMAIL_DOMAIN = 'findu.local';
 const DEFAULT_PASSWORD = 'Test@123456';
 const DEFAULT_USERS_PER_GENDER = 50;

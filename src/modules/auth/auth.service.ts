@@ -41,7 +41,23 @@ export class AuthService {
   /** Đăng ký tài khoản và gửi OTP xác thực */
   async register(dto: RegisterDto) {
     const exists = await this.userService.findByEmail(dto.email);
-    if (exists) throw new EmailAlreadyExistsException();
+    if (exists) {
+      if (exists.isEmailVerified) {
+        throw new EmailAlreadyExistsException();
+      }
+      // Email đã đăng ký nhưng chưa xác thực → cập nhật lại thông tin
+      const passwordHash = await hashPassword(dto.password);
+      await this.userService.updateByEmail(dto.email, {
+        ...dto,
+        password: passwordHash,
+        isEmailVerified: false,
+      });
+      await this.sendVerificationOtp(dto.email);
+      return {
+        message: 'Đăng ký thành công. Vui lòng kiểm tra email để xác thực.',
+        email: dto.email,
+      };
+    }
 
     const passwordHash = await hashPassword(dto.password);
     const user = await this.userService.create({

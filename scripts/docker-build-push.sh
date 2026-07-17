@@ -60,6 +60,12 @@ echo "Building ${IMAGE_NAME}:${TAG_SHA}"
 echo "Platform: ${PLATFORM}"
 echo "Output: ${OUTPUT_MODE}"
 
+# Ensure Colima is running (macOS Docker runtime)
+if ! colima status &>/dev/null; then
+  echo "Colima chưa chạy. Đang start Colima..."
+  colima start
+fi
+
 docker build \
   --platform "${PLATFORM}" \
   -t "${IMAGE_NAME}:latest" \
