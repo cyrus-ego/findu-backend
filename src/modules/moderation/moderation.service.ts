@@ -112,15 +112,15 @@ export class ModerationService {
     }
 
     // Chống gửi trùng liên tiếp
-    if (entry.lastContent === text.trim() && now - entry.lastContentAt < DUPLICATE_WINDOW_MS) {
-      return { isViolation: true, reason: 'Không gửi tin nhắn trùng lặp', severity: 'warn' };
-    }
+    // if (entry.lastContent === text.trim() && now - entry.lastContentAt < DUPLICATE_WINDOW_MS) {
+    //   return { isViolation: true, reason: 'Không gửi tin nhắn trùng lặp', severity: 'warn' };
+    // }
 
     // Khoảng cách tối thiểu giữa 2 tin
-    const lastTs = entry.timestamps[entry.timestamps.length - 1];
-    if (lastTs && now - lastTs < MIN_INTERVAL_MS) {
-      return { isViolation: true, reason: 'Bạn gửi tin quá nhanh, hãy chậm lại', severity: 'warn' };
-    }
+    // const lastTs = entry.timestamps[entry.timestamps.length - 1];
+    // if (lastTs && now - lastTs < MIN_INTERVAL_MS) {
+    //   return { isViolation: true, reason: 'Bạn gửi tin quá nhanh, hãy chậm lại', severity: 'warn' };
+    // }
 
     entry.timestamps = entry.timestamps.filter((t) => now - t < 60_000);
     entry.timestamps.push(now);
