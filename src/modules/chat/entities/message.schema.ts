@@ -37,3 +37,4 @@ export class Message {
 export const MessageSchema = SchemaFactory.createForClass(Message);
 // Index để truy vấn nhanh theo roomId
 MessageSchema.index({ roomId: 1, createdAt: 1 });
+MessageSchema.index({ roomId: 1, createdAt: -1, _id: -1 });

@@ -125,13 +125,13 @@ export class ModerationService {
     entry.timestamps = entry.timestamps.filter((t) => now - t < 60_000);
     entry.timestamps.push(now);
 
-    if (entry.timestamps.length > MAX_MESSAGES_PER_MINUTE) {
-      return {
-        isViolation: true,
-        reason: 'Bạn gửi quá nhiều tin nhắn. Hãy chờ một lát.',
-        severity: 'block',
-      };
-    }
+    // if (entry.timestamps.length > MAX_MESSAGES_PER_MINUTE) {
+    //   return {
+    //     isViolation: true,
+    //     reason: 'Bạn gửi quá nhiều tin nhắn. Hãy chờ một lát.',
+    //     severity: 'block',
+    //   };
+    // }
 
     entry.lastContent = text.trim();
     entry.lastContentAt = now;

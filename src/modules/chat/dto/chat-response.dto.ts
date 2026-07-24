@@ -26,6 +26,21 @@ export class ChatImageUploadResponseDto {
   message: ChatMessageDto;
 }
 
+export class ChatMessagesPageResponseDto {
+  @ApiProperty({ type: [ChatMessageDto] })
+  messages: ChatMessageDto[];
+
+  @ApiPropertyOptional({
+    example: '665a1b2c3d4e5f6789012340',
+    description:
+      'Message id cũ nhất trong page hiện tại, dùng làm beforeMessageId cho page kế tiếp',
+  })
+  nextBeforeMessageId: string | null;
+
+  @ApiProperty({ example: true })
+  hasMore: boolean;
+}
+
 export function toChatMessagePayload(
   message: MessageDocument,
   senderAlias: string,

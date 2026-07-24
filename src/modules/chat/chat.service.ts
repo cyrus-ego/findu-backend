@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Message, MessageDocument, MessageType } from './entities/message.schema';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ModerationService } from '../moderation/moderation.service';
@@ -59,11 +59,56 @@ export class ChatService {
   async getActiveRoomMessages(roomId: string): Promise<MessageDocument[]> {
     const messages = await this.messageModel
       .find({ roomId, type: { $ne: MessageType.SYSTEM } })
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: -1 })
       .limit(100)
       .exec();
 
     return messages.reverse();
+  }
+
+  async getRoomMessagesBefore(
+    roomId: string,
+    beforeMessageId?: string,
+    limit = 50,
+  ): Promise<{ messages: MessageDocument[]; hasMore: boolean }> {
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const query: Record<string, unknown> = {
+      roomId,
+      type: { $ne: MessageType.SYSTEM },
+    };
+
+    if (beforeMessageId) {
+      if (!Types.ObjectId.isValid(beforeMessageId)) {
+        throw new BadRequestException('beforeMessageId không hợp lệ');
+      }
+
+      const cursor = await this.messageModel
+        .findOne({ _id: beforeMessageId, roomId, type: { $ne: MessageType.SYSTEM } })
+        .select({ _id: 1, createdAt: 1 })
+        .exec();
+
+      if (!cursor) {
+        throw new BadRequestException('beforeMessageId không tồn tại trong phòng này');
+      }
+
+      const cursorCreatedAt = (cursor as any).createdAt;
+      query.$or = [
+        { createdAt: { $lt: cursorCreatedAt } },
+        { createdAt: cursorCreatedAt, _id: { $lt: cursor._id } },
+      ];
+    }
+
+    const messages = await this.messageModel
+      .find(query)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(safeLimit + 1)
+      .exec();
+
+    const hasMore = messages.length > safeLimit;
+    return {
+      messages: messages.slice(0, safeLimit).reverse(),
+      hasMore,
+    };
   }
 
   async deleteRoomMessages(roomId: string): Promise<void> {
