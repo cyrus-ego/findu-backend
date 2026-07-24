@@ -17,20 +17,16 @@ import { SendMessageDto } from './dto/send-message.dto';
 import { MessageType } from './entities/message.schema';
 import { ModerationService } from '../moderation/moderation.service';
 import { BlocklistService } from '../blocklist/blocklist.service';
-import { RoomDocument } from '../room/entities/room.schema';
+import { RoomDocument, RoomStatus } from '../room/entities/room.schema';
 import { ChatMessageDto } from './dto/chat-response.dto';
+import { ChatErrorCode, ChatErrorPayload } from './chat-error-code';
 
 interface SocketMeta {
   roomId: string;
   userId: string;
 }
 
-interface CacheEntry<T> {
-  data: T;
-  expiresAt: number;
-}
-
-const ROOM_CACHE_TTL = 60_000; // 60 giây
+const MOBILE_PRESENCE_TTL = 60_000; // Grace window cho app background/reconnect ngắn
 
 @WebSocketGateway({
   namespace: '/chat',
@@ -38,13 +34,14 @@ const ROOM_CACHE_TTL = 60_000; // 60 giây
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
-  server: Server;
+  server?: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
   private readonly socketMeta = new Map<string, SocketMeta>();
   /** roomId → userId → set socketIds */
   private readonly roomPresence = new Map<string, Map<string, Set<string>>>();
-  private readonly roomCache = new Map<string, CacheEntry<RoomDocument>>();
+  private readonly lastSeenAt = new Map<string, number>();
+  private readonly offlineTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly chatService: ChatService,
@@ -97,8 +94,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.socketMeta.delete(client.id);
     client.leave(meta.roomId);
 
-    if (!this.isUserOnline(meta.roomId, meta.userId)) {
-      this.server.to(meta.roomId).emit('room:presence', { userId: meta.userId, online: false });
+    if (!this.hasActiveSocket(meta.roomId, meta.userId)) {
+      this.scheduleOfflinePresence(meta.roomId, meta.userId);
     }
   }
 
@@ -106,21 +103,40 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleJoinRoom(@ConnectedSocket() client: Socket, @MessageBody() data: { roomId: string }) {
     const userId = (client as any).userId as string | undefined;
     if (!userId) {
-      client.emit('error', { message: 'Chưa xác thực' });
+      this.emitError(client, ChatErrorCode.ACCESS_DENIED, 'Chưa xác thực');
       return;
     }
 
     try {
-      const room = await this.roomService.getRoom(data.roomId);
+      const room = await this.roomService.getRoomAnyStatus(data.roomId);
+      if (!room) {
+        client.emit('room:closed', {
+          roomId: data.roomId,
+          reason: ChatErrorCode.ROOM_CLOSED,
+          message: 'Phòng không tồn tại hoặc đã hết hiệu lực',
+        });
+        return;
+      }
+
       if (!this.roomService.isParticipant(room, userId)) {
         // Emit event riêng để frontend có thể redirect chính xác thay vì hiển thị lỗi generic.
         client.emit('room:access_denied', {
+          code: ChatErrorCode.ACCESS_DENIED,
           roomId: data.roomId,
           message: 'Không có quyền vào phòng này',
         });
         return;
       }
-      this.setCachedRoom(data.roomId, room);
+
+      if (room.status !== RoomStatus.ACTIVE) {
+        client.emit('room:closed', {
+          roomId: data.roomId,
+          reason: ChatErrorCode.ROOM_CLOSED,
+          message: 'Phòng đã đóng',
+        });
+        return;
+      }
+
       this.ensureSocketJoinedRoom(client, data.roomId, userId);
 
       const partnerId = this.roomService.getPartnerUserId(room, userId);
@@ -154,10 +170,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.to(data.roomId).emit('room:presence', { userId, online: true });
     } catch {
-      // Phòng không tồn tại hoặc đã đóng — emit access_denied để frontend xóa cookie stale.
-      client.emit('room:access_denied', {
+      client.emit('room:closed', {
         roomId: data.roomId,
-        message: 'Phòng không tồn tại hoặc đã đóng',
+        reason: ChatErrorCode.ROOM_CLOSED,
+        message: 'Phòng không tồn tại hoặc đã hết hiệu lực',
       });
     }
   }
@@ -168,18 +184,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!userId) return;
 
     if (dto.type !== MessageType.TEXT || !dto.content?.trim()) {
-      client.emit('error', { message: 'Tin nhắn không hợp lệ' });
+      this.emitError(client, ChatErrorCode.MESSAGE_SEND_FAILED, 'Tin nhắn không hợp lệ');
       return;
     }
 
     try {
-      const room = this.getCachedRoom(dto.roomId) ?? (await this.roomService.getRoom(dto.roomId));
-      this.ensureSocketJoinedRoom(client, dto.roomId, userId);
-      const partnerId = this.roomService.getPartnerUserId(room, userId);
-      if (partnerId && (await this.blocklistService.isBlocked(userId, partnerId))) {
-        client.emit('error', { message: 'Không thể gửi tin nhắn' });
+      const room = await this.roomService.getRoom(dto.roomId);
+      if (!this.roomService.isParticipant(room, userId)) {
+        this.emitError(
+          client,
+          ChatErrorCode.ACCESS_DENIED,
+          'Không có quyền gửi tin trong phòng này',
+        );
         return;
       }
+
+      const partnerId = this.roomService.getPartnerUserId(room, userId);
+      if (partnerId && (await this.blocklistService.isBlocked(userId, partnerId))) {
+        this.emitError(client, ChatErrorCode.ACCESS_DENIED, 'Không thể gửi tin nhắn');
+        return;
+      }
+
+      this.ensureSocketJoinedRoom(client, dto.roomId, userId);
 
       const alias = this.roomService.getAlias(room, userId);
       const message = await this.chatService.saveMessage(userId, alias, {
@@ -189,23 +215,32 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       });
 
       const payload = this.chatService.toMessagePayload(message, alias);
-      this.server.to(dto.roomId).emit('chat:message', payload);
+      this.io.to(dto.roomId).emit('chat:message', payload);
     } catch (err: any) {
-      const msg = err?.response?.message || err?.message || 'Không gửi được tin nhắn';
-      client.emit('error', { message: Array.isArray(msg) ? msg[0] : msg });
+      this.emitError(client, this.getSendErrorCode(err), this.getErrorMessage(err));
     }
   }
 
   @SubscribeMessage('chat:typing')
-  handleTyping(
+  async handleTyping(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { roomId: string; isTyping: boolean },
   ) {
-    const userId = (client as any).userId;
+    const userId = (client as any).userId as string | undefined;
     if (!userId) return;
-    this.ensureSocketJoinedRoom(client, data.roomId, userId);
 
-    client.to(data.roomId).emit('chat:typing', { isTyping: data.isTyping });
+    try {
+      const room = await this.roomService.getRoom(data.roomId);
+      if (!this.roomService.isParticipant(room, userId)) {
+        this.emitError(client, ChatErrorCode.ACCESS_DENIED, 'Không có quyền trong phòng này');
+        return;
+      }
+
+      this.ensureSocketJoinedRoom(client, data.roomId, userId);
+      client.to(data.roomId).emit('chat:typing', { isTyping: data.isTyping });
+    } catch {
+      this.emitError(client, ChatErrorCode.ROOM_CLOSED, 'Phòng đã đóng');
+    }
   }
 
   /** Chủ động rời phòng → đóng phòng và xóa tin nhắn */
@@ -217,8 +252,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = (client as any).userId as string | undefined;
     if (!userId) return;
 
-    this.invalidateRoomCache(data.roomId);
-    await this.closeRoom(data.roomId, 'Đối phương đã rời phòng.', client);
+    try {
+      const room = await this.roomService.getRoom(data.roomId);
+      if (!this.roomService.isParticipant(room, userId)) {
+        this.emitError(client, ChatErrorCode.ACCESS_DENIED, 'Không có quyền trong phòng này');
+        return;
+      }
+
+      await this.closeRoomAndNotify(data.roomId, 'Đối phương đã rời phòng.', client);
+    } catch {
+      this.emitError(client, ChatErrorCode.ROOM_CLOSED, 'Phòng đã đóng');
+    }
   }
 
   @SubscribeMessage('room:block')
@@ -232,20 +276,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     try {
       const room = await this.roomService.getRoom(data.roomId);
       if (!this.roomService.isParticipant(room, userId)) {
-        client.emit('error', { message: 'Không có quyền' });
+        this.emitError(client, ChatErrorCode.ACCESS_DENIED, 'Không có quyền');
         return;
       }
 
       await this.blocklistService.block(userId, data.targetUserId);
-      this.invalidateRoomCache(data.roomId);
-      await this.closeRoom(data.roomId, 'Phòng đã đóng do chặn người dùng.', client);
+      await this.closeRoomAndNotify(data.roomId, 'Phòng đã đóng do chặn người dùng.', client);
     } catch (err: any) {
-      client.emit('error', { message: err?.message || 'Không thể chặn' });
+      this.emitError(client, ChatErrorCode.MESSAGE_SEND_FAILED, err?.message || 'Không thể chặn');
     }
   }
 
   broadcastMessage(roomId: string, payload: Record<string, unknown> | ChatMessageDto) {
-    this.server.to(roomId).emit('chat:message', payload);
+    this.io.to(roomId).emit('chat:message', payload);
   }
 
   isUserOnlineInRoom(roomId: string, userId: string): boolean {
@@ -253,6 +296,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private addSocketToPresence(roomId: string, userId: string, socketId: string) {
+    const key = this.presenceKey(roomId, userId);
+    this.clearOfflineTimer(key);
+    this.lastSeenAt.delete(key);
+
     if (!this.roomPresence.has(roomId)) {
       this.roomPresence.set(roomId, new Map());
     }
@@ -272,6 +319,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sockets.delete(socketId);
       if (sockets.size === 0) {
         roomMap.delete(userId);
+        this.lastSeenAt.set(this.presenceKey(roomId, userId), Date.now());
       }
     }
 
@@ -281,27 +329,73 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private isUserOnline(roomId: string, userId: string): boolean {
+    if (this.hasActiveSocket(roomId, userId)) return true;
+
+    const lastSeen = this.lastSeenAt.get(this.presenceKey(roomId, userId));
+    if (!lastSeen) return false;
+
+    return Date.now() - lastSeen < this.getPresenceTtlMs();
+  }
+
+  private hasActiveSocket(roomId: string, userId: string): boolean {
     const roomMap = this.roomPresence.get(roomId);
     const sockets = roomMap?.get(userId);
     return !!sockets && sockets.size > 0;
   }
 
-  private getCachedRoom(roomId: string): RoomDocument | undefined {
-    const cached = this.roomCache.get(roomId);
-    if (!cached) return undefined;
-    if (Date.now() > cached.expiresAt) {
-      this.roomCache.delete(roomId);
-      return undefined;
+  private scheduleOfflinePresence(roomId: string, userId: string): void {
+    const key = this.presenceKey(roomId, userId);
+    this.clearOfflineTimer(key);
+
+    const timer = setTimeout(() => {
+      this.offlineTimers.delete(key);
+
+      if (this.hasActiveSocket(roomId, userId)) return;
+
+      const lastSeen = this.lastSeenAt.get(key);
+      if (lastSeen && Date.now() - lastSeen < this.getPresenceTtlMs()) {
+        this.scheduleOfflinePresence(roomId, userId);
+        return;
+      }
+
+      this.lastSeenAt.delete(key);
+      this.io.to(roomId).emit('room:presence', { userId, online: false });
+    }, this.getPresenceTtlMs());
+
+    this.offlineTimers.set(key, timer);
+  }
+
+  private getPresenceTtlMs(): number {
+    return this.config.get<number>('CHAT_PRESENCE_TTL_MS', MOBILE_PRESENCE_TTL);
+  }
+
+  private presenceKey(roomId: string, userId: string): string {
+    return `${roomId}:${userId}`;
+  }
+
+  private clearOfflineTimer(key: string): void {
+    const timer = this.offlineTimers.get(key);
+    if (!timer) return;
+
+    clearTimeout(timer);
+    this.offlineTimers.delete(key);
+  }
+
+  private clearRoomPresence(roomId: string): void {
+    this.roomPresence.delete(roomId);
+
+    const prefix = `${roomId}:`;
+    for (const key of this.lastSeenAt.keys()) {
+      if (key.startsWith(prefix)) {
+        this.lastSeenAt.delete(key);
+      }
     }
-    return cached.data;
-  }
 
-  private setCachedRoom(roomId: string, room: RoomDocument): void {
-    this.roomCache.set(roomId, { data: room, expiresAt: Date.now() + ROOM_CACHE_TTL });
-  }
-
-  private invalidateRoomCache(roomId: string): void {
-    this.roomCache.delete(roomId);
+    for (const key of this.offlineTimers.keys()) {
+      if (key.startsWith(prefix)) {
+        this.clearOfflineTimer(key);
+      }
+    }
   }
 
   /**
@@ -314,14 +408,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
 
+    if (meta) {
+      client.leave(meta.roomId);
+      this.removeSocketFromPresence(meta.roomId, meta.userId, client.id);
+      if (!this.hasActiveSocket(meta.roomId, meta.userId)) {
+        this.scheduleOfflinePresence(meta.roomId, meta.userId);
+      }
+    }
+
     client.join(roomId);
     this.socketMeta.set(client.id, { roomId, userId });
     this.addSocketToPresence(roomId, userId, client.id);
   }
 
-  private async closeRoom(roomId: string, systemMessage: string, initiatingClient?: Socket) {
-    this.invalidateRoomCache(roomId);
-
+  async closeRoomAndNotify(roomId: string, systemMessage: string, initiatingClient?: Socket) {
     try {
       const room = await this.roomService.getRoom(roomId);
       await this.finalizeRoom(room, roomId, systemMessage);
@@ -329,26 +429,31 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Phòng có thể đã đóng
     }
 
-    this.roomPresence.delete(roomId);
+    this.clearRoomPresence(roomId);
 
     if (initiatingClient) {
       initiatingClient.leave(roomId);
-      this.socketMeta.delete(initiatingClient.id);
     }
 
-    this.server.in(roomId).socketsLeave(roomId);
+    for (const [socketId, meta] of this.socketMeta.entries()) {
+      if (meta.roomId === roomId) {
+        this.socketMeta.delete(socketId);
+      }
+    }
+
+    this.io.in(roomId).socketsLeave(roomId);
   }
 
   private async finalizeRoom(_room: RoomDocument, roomId: string, systemMessage: string) {
-    this.server.to(roomId).emit('chat:message', {
-      id: `system-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      senderAlias: 'System',
-      type: MessageType.SYSTEM,
-      content: systemMessage,
-      createdAt: new Date().toISOString(),
-    });
+    this.io
+      .to(roomId)
+      .emit('chat:message', this.createSystemMessagePayload(roomId, systemMessage));
 
-    this.server.to(roomId).emit('room:closed', { roomId });
+    this.io.to(roomId).emit('room:closed', {
+      roomId,
+      reason: ChatErrorCode.ROOM_CLOSED,
+      message: 'Phòng đã đóng',
+    });
 
     await this.roomService.closeRoom(roomId);
     await this.chatService.deleteRoomMessages(roomId);
@@ -356,5 +461,50 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     for (const uid of _room.participants.map((p) => p.toString())) {
       this.moderationService.clearSpamTracker(uid, roomId);
     }
+  }
+
+  private createSystemMessagePayload(roomId: string, content: string): ChatMessageDto {
+    const createdAt = new Date();
+    return {
+      id: `system-${roomId}-${createdAt.getTime()}`,
+      senderAlias: 'System',
+      type: MessageType.SYSTEM,
+      content,
+      createdAt: createdAt.toISOString(),
+    };
+  }
+
+  private emitError(client: Socket, code: ChatErrorCode, message: string): void {
+    const payload: ChatErrorPayload = { code, message };
+    client.emit('error', payload);
+  }
+
+  private get io(): Server {
+    if (!this.server) {
+      throw new Error('ChatGateway Socket.IO server has not been initialized');
+    }
+
+    return this.server;
+  }
+
+  private getErrorMessage(err: any): string {
+    const response = typeof err?.getResponse === 'function' ? err.getResponse() : err?.response;
+    const msg = response?.message || err?.message || 'Không gửi được tin nhắn';
+    return Array.isArray(msg) ? msg[0] : msg;
+  }
+
+  private getSendErrorCode(err: any): ChatErrorCode {
+    const response = typeof err?.getResponse === 'function' ? err.getResponse() : err?.response;
+    const rawCode = response?.code;
+
+    if (Object.values(ChatErrorCode).includes(rawCode)) {
+      return rawCode;
+    }
+
+    if (rawCode === 'ROOM_NOT_FOUND') {
+      return ChatErrorCode.ROOM_CLOSED;
+    }
+
+    return ChatErrorCode.MESSAGE_SEND_FAILED;
   }
 }

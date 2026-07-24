@@ -5,6 +5,7 @@ import { Message, MessageDocument, MessageType } from './entities/message.schema
 import { SendMessageDto } from './dto/send-message.dto';
 import { ModerationService } from '../moderation/moderation.service';
 import { ChatMessageDto, toChatMessagePayload } from './dto/chat-response.dto';
+import { ChatErrorCode } from './chat-error-code';
 
 @Injectable()
 export class ChatService {
@@ -22,7 +23,13 @@ export class ChatService {
     if (dto.type === MessageType.TEXT && dto.content) {
       const result = this.moderationService.moderateMessage(senderId, dto.roomId, dto.content);
       if (result.isViolation) {
-        throw new BadRequestException(result.reason);
+        throw new BadRequestException({
+          code:
+            result.severity === 'block'
+              ? ChatErrorCode.SPAM_DETECTED
+              : ChatErrorCode.MODERATION_BLOCKED,
+          message: result.reason || 'Tin nhắn không phù hợp',
+        });
       }
     }
 
@@ -30,7 +37,10 @@ export class ChatService {
       const mime = imageMimetype || 'image/jpeg';
       const result = await this.moderationService.checkImage(dto.imageUrl, mime);
       if (result.isViolation) {
-        throw new BadRequestException(result.reason);
+        throw new BadRequestException({
+          code: ChatErrorCode.MODERATION_BLOCKED,
+          message: result.reason || 'Ảnh không phù hợp',
+        });
       }
     }
 
@@ -47,11 +57,13 @@ export class ChatService {
 
   /** Tin nhắn tạm trong phòng (xóa khi đóng phòng) — dùng khi reconnect */
   async getActiveRoomMessages(roomId: string): Promise<MessageDocument[]> {
-    return this.messageModel
+    const messages = await this.messageModel
       .find({ roomId, type: { $ne: MessageType.SYSTEM } })
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .limit(100)
       .exec();
+
+    return messages.reverse();
   }
 
   async deleteRoomMessages(roomId: string): Promise<void> {

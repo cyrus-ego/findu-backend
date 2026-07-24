@@ -41,6 +41,10 @@ export class RoomService {
     return room;
   }
 
+  async getRoomAnyStatus(roomId: string): Promise<RoomDocument | null> {
+    return this.roomRepository.findByRoomIdAny(roomId);
+  }
+
   async getActiveRoomForUser(userId: string): Promise<RoomDocument | null> {
     return this.roomRepository.findActiveByParticipant(userId);
   }
