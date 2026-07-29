@@ -16,6 +16,10 @@ pnpm-debug.log*
 !.env.example
 !.env.*.example
 
+# Firebase service-account private keys
+*-firebase-adminsdk-*.json
+firebase-service-account*.json
+
 # OS / Editor
 .DS_Store
 .idea/
