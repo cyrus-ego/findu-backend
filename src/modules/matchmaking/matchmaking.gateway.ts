@@ -14,6 +14,7 @@ import { Server, Socket } from 'socket.io';
 import { MatchmakingService } from './matchmaking.service';
 import { JoinQueueDto } from './dto/join-queue.dto';
 import { RoomService } from '../room/room.service';
+import { NotificationService } from '../notification/notification.service';
 
 const POSITION_INTERVAL_MS = 3000;
 
@@ -31,6 +32,7 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
   constructor(
     private readonly matchmakingService: MatchmakingService,
     private readonly roomService: RoomService,
+    private readonly notificationService: NotificationService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
   ) {}
@@ -62,6 +64,7 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
     const userId = (client as any).userId as string | undefined;
     if (userId) {
       this.clearPositionTimer(userId);
+      this.notificationService.markMatchmakingView(userId, false);
       await this.matchmakingService.handleDisconnect(userId);
       this.logger.log(`Matchmaking disconnect cleanup: ${userId}`);
     }
@@ -117,8 +120,19 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
     if (!userId) return;
 
     this.clearPositionTimer(userId);
+    this.notificationService.markMatchmakingView(userId, false);
     await this.matchmakingService.leaveQueue(userId);
     client.emit('queue:left');
+  }
+
+  @SubscribeMessage('queue:visibility')
+  handleQueueVisibility(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { visible: boolean },
+  ) {
+    const userId = (client as any).userId;
+    if (!userId) return;
+    this.notificationService.markMatchmakingView(userId, data?.visible === true);
   }
 
   private startPositionLoop(client: Socket, userId: string) {
@@ -183,5 +197,11 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
       this.server.to(match.partnerSocketId).emit('match:found', partnerPayload);
       this.clearPositionTimer(match.partnerId);
     }
+
+    void this.notificationService.sendMatchFound({ recipientId: userId, roomId: room.roomId });
+    void this.notificationService.sendMatchFound({
+      recipientId: match.partnerId,
+      roomId: room.roomId,
+    });
   }
 }

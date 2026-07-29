@@ -25,7 +25,10 @@ export function createOptionalOAuthProviders(): Provider[] {
     {
       provide: FacebookStrategy,
       useFactory: (config: ConfigService) => {
-        if (!isOAuthClientConfigured(config.get<string>('FACEBOOK_APP_ID'))) {
+        if (
+          !isOAuthClientConfigured(config.get<string>('FACEBOOK_APP_ID')) ||
+          !isOAuthClientConfigured(config.get<string>('FACEBOOK_APP_SECRET'))
+        ) {
           return null;
         }
         return new FacebookStrategy(config);

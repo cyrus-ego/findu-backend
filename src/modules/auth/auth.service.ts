@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { createHmac } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { UserService } from '../user/user.service';
 import { OtpRepository } from './otp.repository';
@@ -156,10 +157,18 @@ export class AuthService {
 
   /** Đăng nhập Facebook bằng accessToken (mobile / native SDK) */
   async facebookLoginWithAccessToken(accessToken: string) {
-    const appId = this.config.get<string>('FACEBOOK_APP_ID');
-    if (!isOAuthClientConfigured(appId)) {
+    const facebookAppId = this.config.get<string>('FACEBOOK_APP_ID')?.trim();
+    const facebookAppSecret = this.config.get<string>('FACEBOOK_APP_SECRET')?.trim();
+    if (
+      !facebookAppId ||
+      !facebookAppSecret ||
+      !isOAuthClientConfigured(facebookAppId) ||
+      !isOAuthClientConfigured(facebookAppSecret)
+    ) {
       throw new BadRequestException('Facebook OAuth chưa được cấu hình trên server');
     }
+
+    await this.verifyFacebookAccessToken(accessToken, facebookAppId, facebookAppSecret);
 
     let fbUser: {
       id?: string;
@@ -169,8 +178,12 @@ export class AuthService {
     };
 
     try {
-      const url = `https://graph.facebook.com/me?fields=id,name,email,picture&access_token=${encodeURIComponent(accessToken)}&appsecret_proof=${encodeURIComponent(await this.generateAppSecretProof(accessToken))}`;
-      const res = await fetch(url);
+      const params = new URLSearchParams({
+        fields: 'id,name,email,picture',
+        access_token: accessToken,
+        appsecret_proof: this.generateAppSecretProof(accessToken, facebookAppSecret),
+      });
+      const res = await fetch(`https://graph.facebook.com/me?${params.toString()}`);
       if (!res.ok) {
         const body = await res.text();
         this.logger.warn(`Facebook Graph API error: ${body}`);
@@ -195,12 +208,40 @@ export class AuthService {
     });
   }
 
-  private async generateAppSecretProof(accessToken: string): Promise<string> {
-    const { createHash } = await import('crypto');
-    const appSecret = this.config.get<string>('FACEBOOK_APP_SECRET') || '';
-    return createHash('sha256')
-      .update(accessToken + appSecret)
-      .digest('hex');
+  private async verifyFacebookAccessToken(
+    accessToken: string,
+    appId: string,
+    appSecret: string,
+  ): Promise<void> {
+    const params = new URLSearchParams({
+      input_token: accessToken,
+      access_token: `${appId}|${appSecret}`,
+    });
+
+    try {
+      const res = await fetch(`https://graph.facebook.com/debug_token?${params.toString()}`);
+      if (!res.ok) {
+        const body = await res.text();
+        this.logger.warn(`Facebook debug_token error: ${body}`);
+        throw new UnauthorizedException('Facebook access token không hợp lệ hoặc đã hết hạn');
+      }
+
+      const payload = (await res.json()) as {
+        data?: { app_id?: string; is_valid?: boolean; type?: string };
+      };
+      const tokenInfo = payload.data;
+      if (!tokenInfo?.is_valid || tokenInfo.app_id !== appId || tokenInfo.type !== 'USER') {
+        throw new UnauthorizedException('Facebook access token không hợp lệ hoặc đã hết hạn');
+      }
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      this.logger.warn(`Facebook token debug failed: ${(err as Error).message}`);
+      throw new UnauthorizedException('Không thể xác thực Facebook access token');
+    }
+  }
+
+  private generateAppSecretProof(accessToken: string, appSecret: string): string {
+    return createHmac('sha256', appSecret).update(accessToken).digest('hex');
   }
 
   /** Đăng nhập Google bằng idToken (mobile / native SDK) */

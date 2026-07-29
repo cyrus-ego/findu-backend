@@ -33,6 +33,7 @@ import { chatImageMulterOptions } from './config/chat-multer.config';
 import { ConfigService } from '@nestjs/config';
 import { ApiStandardErrors, ApiSuccessResponse } from '../../common/swagger/swagger.decorators';
 import { ChatImageUploadResponseDto, ChatMessagesPageResponseDto } from './dto/chat-response.dto';
+import { NotificationService } from '../notification/notification.service';
 
 const MAX_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || '5', 10);
 
@@ -45,6 +46,7 @@ export class ChatController {
     private readonly chatGateway: ChatGateway,
     private readonly roomService: RoomService,
     private readonly config: ConfigService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   @Get(':roomId/messages')
@@ -154,6 +156,18 @@ export class ChatController {
     const payload = this.chatService.toMessagePayload(message, alias, `${base}${imagePath}`);
 
     this.chatGateway.broadcastMessage(roomId, payload);
+
+    const partnerId = this.roomService.getPartnerUserId(room, userId);
+    if (partnerId && !this.notificationService.isUserViewingChatRoom(partnerId, roomId)) {
+      void this.notificationService.sendChatMessage({
+        recipientId: partnerId,
+        roomId,
+        messageId: payload.id,
+        senderAlias: alias,
+        body: '',
+        type: 'image',
+      });
+    }
 
     return { message: payload };
   }

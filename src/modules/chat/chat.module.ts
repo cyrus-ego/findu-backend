@@ -9,6 +9,7 @@ import { Message, MessageSchema } from './entities/message.schema';
 import { ModerationModule } from '../moderation/moderation.module';
 import { RoomModule } from '../room/room.module';
 import { BlocklistModule } from '../blocklist/blocklist.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { BlocklistModule } from '../blocklist/blocklist.module';
     ModerationModule,
     forwardRef(() => RoomModule),
     BlocklistModule,
+    NotificationModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

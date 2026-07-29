@@ -20,6 +20,7 @@ import { BlocklistService } from '../blocklist/blocklist.service';
 import { RoomDocument, RoomStatus } from '../room/entities/room.schema';
 import { ChatMessageDto } from './dto/chat-response.dto';
 import { ChatErrorCode, ChatErrorPayload } from './chat-error-code';
+import { NotificationService } from '../notification/notification.service';
 
 interface SocketMeta {
   roomId: string;
@@ -48,6 +49,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly roomService: RoomService,
     private readonly moderationService: ModerationService,
     private readonly blocklistService: BlocklistService,
+    private readonly notificationService: NotificationService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
   ) {}
@@ -91,6 +93,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!meta) return;
 
     this.removeSocketFromPresence(meta.roomId, meta.userId, client.id);
+    this.notificationService.markChatView(meta.userId, meta.roomId, false);
     this.socketMeta.delete(client.id);
     client.leave(meta.roomId);
 
@@ -216,8 +219,43 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       const payload = this.chatService.toMessagePayload(message, alias);
       this.io.to(dto.roomId).emit('chat:message', payload);
+
+      if (partnerId && !this.notificationService.isUserViewingChatRoom(partnerId, dto.roomId)) {
+        void this.notificationService.sendChatMessage({
+          recipientId: partnerId,
+          roomId: dto.roomId,
+          messageId: payload.id,
+          senderAlias: alias,
+          body: payload.content || '',
+          type: 'text',
+        });
+      }
     } catch (err: any) {
       this.emitError(client, this.getSendErrorCode(err), this.getErrorMessage(err));
+    }
+  }
+
+  @SubscribeMessage('chat:visibility')
+  async handleChatVisibility(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { roomId: string; visible: boolean },
+  ) {
+    const userId = (client as any).userId as string | undefined;
+    if (!userId || !data?.roomId) return;
+
+    if (data.visible !== true) {
+      this.notificationService.markChatView(userId, data.roomId, false);
+      return;
+    }
+
+    try {
+      const room = await this.roomService.getRoom(data.roomId);
+      if (room.status !== RoomStatus.ACTIVE || !this.roomService.isParticipant(room, userId)) {
+        return;
+      }
+      this.notificationService.markChatView(userId, data.roomId, true);
+    } catch {
+      this.notificationService.markChatView(userId, data.roomId, false);
     }
   }
 
@@ -411,6 +449,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (meta) {
       client.leave(meta.roomId);
       this.removeSocketFromPresence(meta.roomId, meta.userId, client.id);
+      this.notificationService.markChatView(meta.userId, meta.roomId, false);
       if (!this.hasActiveSocket(meta.roomId, meta.userId)) {
         this.scheduleOfflinePresence(meta.roomId, meta.userId);
       }
@@ -445,9 +484,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private async finalizeRoom(_room: RoomDocument, roomId: string, systemMessage: string) {
-    this.io
-      .to(roomId)
-      .emit('chat:message', this.createSystemMessagePayload(roomId, systemMessage));
+    this.io.to(roomId).emit('chat:message', this.createSystemMessagePayload(roomId, systemMessage));
 
     this.io.to(roomId).emit('room:closed', {
       roomId,

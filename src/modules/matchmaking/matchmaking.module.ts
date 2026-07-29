@@ -7,12 +7,14 @@ import { MatchmakingGateway } from './matchmaking.gateway';
 import { ProfileModule } from '../profile/profile.module';
 import { BlocklistModule } from '../blocklist/blocklist.module';
 import { RoomModule } from '../room/room.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
     ProfileModule,
     BlocklistModule,
     RoomModule,
+    NotificationModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

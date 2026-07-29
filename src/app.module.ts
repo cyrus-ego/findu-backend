@@ -11,6 +11,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { BlocklistModule } from './modules/blocklist/blocklist.module';
 import { GatewayModule } from './modules/gateway/gateway.module';
+import { NotificationModule } from './modules/notification/notification.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { resolveMongoUri } from './config/mongodb.util';
 
@@ -46,6 +47,7 @@ const envFilePath =
     ModerationModule,
     BlocklistModule,
     GatewayModule,
+    NotificationModule,
   ],
 })
 export class AppModule implements NestModule {
