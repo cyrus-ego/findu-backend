@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { RoomRepository } from './room.repository';
 import {
   generateAnonymousNickname,
@@ -15,7 +15,16 @@ export class RoomService {
   constructor(private readonly roomRepository: RoomRepository) {}
 
   async createRoom(participantIds: string[]) {
-    await this.roomRepository.closeActiveByParticipants(participantIds);
+    const room = await this.createRoomIfAvailable(participantIds);
+    if (!room) {
+      throw new ConflictException('Một người tham gia đang có phòng chat hoạt động');
+    }
+    return room;
+  }
+
+  async createRoomIfAvailable(participantIds: string[]): Promise<RoomDocument | null> {
+    const activeRoom = await this.roomRepository.findActiveByParticipants(participantIds);
+    if (activeRoom) return null;
 
     const roomId = uuidv4();
     const anonymousNames: Record<string, string> = {};
@@ -26,13 +35,18 @@ export class RoomService {
       anonymousAvatars[uid] = generateAnonymousAvatar(uuidv4());
     }
 
-    return this.roomRepository.create({
-      roomId,
-      participants: participantIds as any,
-      anonymousNames: anonymousNames as any,
-      anonymousAvatars: anonymousAvatars as any,
-      status: RoomStatus.ACTIVE,
-    });
+    try {
+      return await this.roomRepository.create({
+        roomId,
+        participants: participantIds as any,
+        anonymousNames: anonymousNames as any,
+        anonymousAvatars: anonymousAvatars as any,
+        status: RoomStatus.ACTIVE,
+      });
+    } catch (error) {
+      if (this.isDuplicateKeyError(error)) return null;
+      throw error;
+    }
   }
 
   async getRoom(roomId: string) {
@@ -82,5 +96,14 @@ export class RoomService {
 
   isParticipant(room: RoomDocument, userId: string): boolean {
     return room.participants.some((p) => p.toString() === userId);
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: number }).code === 11000
+    );
   }
 }

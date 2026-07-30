@@ -44,6 +44,12 @@ export class ProfileDataDto {
   @ApiProperty({ example: false })
   isVip: boolean;
 
+  @ApiProperty({
+    example: true,
+    description: 'Cho phép user được chọn làm đối phương khi không ở hàng đợi online',
+  })
+  offlineMatchingEnabled: boolean;
+
   @ApiPropertyOptional({ example: null, nullable: true })
   vipExpiresAt?: string | null;
 
@@ -106,6 +112,7 @@ export function toProfileResponse(
           bio: profile.bio || '',
           avatar: profile.avatar || user.avatar || '',
           chatPreference: normalizeChatPreference(profile),
+          offlineMatchingEnabled: profile.offlineMatchingEnabled !== false,
           isVip: profile.isVip,
           vipExpiresAt: profile.vipExpiresAt ? toIsoDate(profile.vipExpiresAt) : null,
           createdAt: toIsoDate((profile as any).createdAt),

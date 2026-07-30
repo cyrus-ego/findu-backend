@@ -29,24 +29,21 @@ export class RoomRepository {
       .exec();
   }
 
+  async findActiveByParticipants(userIds: string[]): Promise<RoomDocument | null> {
+    return this.roomModel
+      .findOne({
+        participants: { $in: userIds },
+        status: RoomStatus.ACTIVE,
+      })
+      .exec();
+  }
+
   async closeRoom(roomId: string): Promise<RoomDocument | null> {
     return this.roomModel
       .findOneAndUpdate(
         { roomId },
         { status: RoomStatus.CLOSED, closedAt: new Date() },
         { new: true },
-      )
-      .exec();
-  }
-
-  async closeActiveByParticipants(participantIds: string[]): Promise<void> {
-    await this.roomModel
-      .updateMany(
-        {
-          participants: { $in: participantIds },
-          status: RoomStatus.ACTIVE,
-        },
-        { status: RoomStatus.CLOSED, closedAt: new Date() },
       )
       .exec();
   }

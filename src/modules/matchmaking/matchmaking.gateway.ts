@@ -13,7 +13,6 @@ import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { MatchmakingService } from './matchmaking.service';
 import { JoinQueueDto } from './dto/join-queue.dto';
-import { RoomService } from '../room/room.service';
 import { NotificationService } from '../notification/notification.service';
 
 const POSITION_INTERVAL_MS = 3000;
@@ -31,7 +30,6 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
 
   constructor(
     private readonly matchmakingService: MatchmakingService,
-    private readonly roomService: RoomService,
     private readonly notificationService: NotificationService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
@@ -180,16 +178,14 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
 
     this.clearPositionTimer(userId);
 
-    const room = await this.roomService.createRoom([userId, match.partnerId]);
-
     const payload = {
-      roomId: room.roomId,
+      roomId: match.roomId,
       partnerId: match.partnerId,
     };
 
     client.emit('match:found', payload);
 
-    const partnerPayload = { roomId: room.roomId, partnerId: userId };
+    const partnerPayload = { roomId: match.roomId, partnerId: userId };
 
     if (match.partnerSocketId.startsWith('pending:')) {
       await this.matchmakingService.setPendingMatch(match.partnerId, partnerPayload);
@@ -198,10 +194,10 @@ export class MatchmakingGateway implements OnGatewayConnection, OnGatewayDisconn
       this.clearPositionTimer(match.partnerId);
     }
 
-    void this.notificationService.sendMatchFound({ recipientId: userId, roomId: room.roomId });
+    void this.notificationService.sendMatchFound({ recipientId: userId, roomId: match.roomId });
     void this.notificationService.sendMatchFound({
       recipientId: match.partnerId,
-      roomId: room.roomId,
+      roomId: match.roomId,
     });
   }
 }

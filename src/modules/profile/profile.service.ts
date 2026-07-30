@@ -106,6 +106,10 @@ export class ProfileService {
     return this.profileRepository.findByUserId(userId);
   }
 
+  async updateChatPreference(userId: string, chatPreference: Profile['chatPreference']) {
+    return this.profileRepository.updateByUserId(userId, { chatPreference });
+  }
+
   private buildPublicUrl(path: string): string {
     const port = this.config.get<number>('PORT', 3000);
     const base = this.config.get<string>('APP_URL', `http://localhost:${port}`);
@@ -118,6 +122,9 @@ export class ProfileService {
     if (dto.age !== undefined) data.age = dto.age;
     if (dto.bio !== undefined) data.bio = dto.bio;
     if (dto.chatPreference !== undefined) data.chatPreference = dto.chatPreference;
+    if (dto.offlineMatchingEnabled !== undefined) {
+      data.offlineMatchingEnabled = dto.offlineMatchingEnabled;
+    }
     return data;
   }
 }

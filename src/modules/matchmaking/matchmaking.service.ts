@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { randomUUID } from 'crypto';
 import { JoinQueueDto } from './dto/join-queue.dto';
 import { QueueStatusResponseDto, MatchResult } from './dto/queue-status.dto';
 import {
@@ -16,13 +17,22 @@ import {
 import { ProfileService } from '../profile/profile.service';
 import { BlocklistService } from '../blocklist/blocklist.service';
 import { Gender, ChatPreference } from '../profile/entities/profile.schema';
+import { RoomService } from '../room/room.service';
+import { OfflineCandidateRepository } from './offline-candidate.repository';
 
 const QUEUE_ZSET = 'matchmaking:queue';
 const ENTRY_PREFIX = 'matchmaking:entry:';
-const LOCK_PREFIX = 'matchmaking:lock:';
+const ATTEMPT_LOCK_PREFIX = 'matchmaking:attempt:';
+const USER_CLAIM_PREFIX = 'matchmaking:user-claim:';
 const PAIR_LOCK_PREFIX = 'matchmaking:pair:';
+const OFFLINE_GRACE_PREFIX = 'matchmaking:offline-grace:';
+const OFFLINE_RETRY_PREFIX = 'matchmaking:offline-retry:';
+const MATCH_LOCK_TTL_SEC = 20;
+const OFFLINE_RETRY_INTERVAL_SEC = 10;
+const OFFLINE_CANDIDATE_LIMIT = 20;
 
 export const QUEUE_TIMEOUT_SEC = 300; // 5 phút
+export const OFFLINE_FALLBACK_DELAY_SEC = 15;
 
 export interface QueueEntry {
   userId: string;
@@ -42,6 +52,8 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly profileService: ProfileService,
     private readonly blocklistService: BlocklistService,
+    private readonly roomService: RoomService,
+    private readonly offlineCandidateRepository: OfflineCandidateRepository,
   ) {}
 
   onModuleInit() {
@@ -73,6 +85,22 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     return `${PAIR_LOCK_PREFIX}${x}:${y}`;
   }
 
+  private userClaimKey(userId: string) {
+    return `${USER_CLAIM_PREFIX}${userId}`;
+  }
+
+  private offlineGraceKey(userId: string) {
+    return `${OFFLINE_GRACE_PREFIX}${userId}`;
+  }
+
+  private offlineRetryKey(userId: string) {
+    return `${OFFLINE_RETRY_PREFIX}${userId}`;
+  }
+
+  private async clearOfflineFallbackState(userId: string): Promise<void> {
+    await this.redis.del(this.offlineGraceKey(userId), this.offlineRetryKey(userId));
+  }
+
   /** Vào hàng đợi — yêu cầu profile đầy đủ */
   async joinQueue(
     userId: string,
@@ -85,6 +113,17 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
     if (!profile?.gender || !profile?.age) {
       throw new ProfileIncompleteException();
     }
+
+    if (await this.roomService.getActiveRoomForUser(userId)) {
+      await this.leaveQueue(userId);
+      throw new BadRequestException('Bạn đang có một phòng chat hoạt động');
+    }
+
+    if (await this.redis.exists(this.userClaimKey(userId))) {
+      throw new BadRequestException('Hệ thống đang hoàn tất một lượt ghép đôi cho bạn');
+    }
+
+    await this.profileService.updateChatPreference(userId, dto.preference);
 
     const existing = await this.getQueueEntry(userId);
     if (existing) {
@@ -122,7 +161,11 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
 
   /** Rời hàng đợi */
   async leaveQueue(userId: string): Promise<void> {
-    await this.redis.del(this.entryKey(userId));
+    await this.redis.del(
+      this.entryKey(userId),
+      this.offlineGraceKey(userId),
+      this.offlineRetryKey(userId),
+    );
     await this.redis.zrem(QUEUE_ZSET, userId);
     this.logger.log(`User ${userId} left queue`);
   }
@@ -176,8 +219,8 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
    * Trả về MatchResult nếu thành công, null nếu chưa tìm được.
    */
   async tryAtomicMatch(userId: string): Promise<MatchResult | null> {
-    const lockKey = `${LOCK_PREFIX}${userId}`;
-    const acquired = await this.redis.set(lockKey, '1', 'EX', 8, 'NX');
+    const lockKey = `${ATTEMPT_LOCK_PREFIX}${userId}`;
+    const acquired = await this.redis.set(lockKey, '1', 'EX', MATCH_LOCK_TTL_SEC, 'NX');
     if (!acquired) return null;
 
     try {
@@ -187,11 +230,17 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
         return null;
       }
 
+      if (await this.roomService.getActiveRoomForUser(userId)) {
+        await this.leaveQueue(userId);
+        return null;
+      }
+
       const blockIds = await this.blocklistService.getMutualBlockIds(userId);
       const blockSet = new Set(blockIds);
 
       // FIFO: duyệt từ người chờ lâu nhất (score thấp nhất)
       const candidateIds = await this.redis.zrange(QUEUE_ZSET, 0, -1);
+      let compatibleOnlinePresent = false;
 
       for (const candidateId of candidateIds) {
         if (candidateId === userId) continue;
@@ -209,20 +258,259 @@ export class MatchmakingService implements OnModuleInit, OnModuleDestroy {
 
         if (!this.isCompatible(myEntry, candidate)) continue;
 
-        const matched = await this.claimPair(userId, candidateId);
-        if (matched) {
+        if (await this.roomService.getActiveRoomForUser(candidateId)) {
+          await this.leaveQueue(candidateId);
+          continue;
+        }
+
+        compatibleOnlinePresent = true;
+        const claimId = await this.acquireUserClaims(userId, candidateId);
+        if (!claimId) continue;
+
+        try {
+          const [latestMe, latestCandidate] = await Promise.all([
+            this.getQueueEntry(userId),
+            this.getQueueEntry(candidateId),
+          ]);
+          if (!latestMe || !latestCandidate || !this.isCompatible(latestMe, latestCandidate)) {
+            continue;
+          }
+
+          const [myActiveRoom, candidateActiveRoom] = await Promise.all([
+            this.roomService.getActiveRoomForUser(userId),
+            this.roomService.getActiveRoomForUser(candidateId),
+          ]);
+          if (myActiveRoom || candidateActiveRoom) {
+            if (myActiveRoom) await this.leaveQueue(userId);
+            if (candidateActiveRoom) await this.leaveQueue(candidateId);
+            continue;
+          }
+
+          const matched = await this.claimPair(userId, candidateId);
+          if (!matched) continue;
+
+          const room = await this.roomService.createRoomIfAvailable([userId, candidateId]);
+          if (!room) {
+            this.logger.warn(`Room creation skipped for busy pair ${userId} <-> ${candidateId}`);
+            continue;
+          }
+
+          await Promise.all([
+            this.clearOfflineFallbackState(userId),
+            this.clearOfflineFallbackState(candidateId),
+          ]);
           return {
-            roomId: '', // Gateway sẽ tạo room và gán
-            partnerId: candidate.userId,
-            partnerSocketId: candidate.socketId,
+            roomId: room.roomId,
+            partnerId: latestCandidate.userId,
+            partnerSocketId: latestCandidate.socketId,
+            source: 'online',
           };
+        } finally {
+          await this.releaseUserClaims(userId, candidateId, claimId);
         }
       }
 
-      return null;
+      if (compatibleOnlinePresent) {
+        await this.clearOfflineFallbackState(userId);
+        return null;
+      }
+
+      return this.tryOfflineFallback(myEntry, blockSet);
     } finally {
       await this.redis.del(lockKey);
     }
+  }
+
+  private async tryOfflineFallback(
+    myEntry: QueueEntry,
+    blockSet: Set<string>,
+  ): Promise<MatchResult | null> {
+    const now = Date.now();
+    const graceKey = this.offlineGraceKey(myEntry.userId);
+    const graceStartedRaw = await this.redis.get(graceKey);
+
+    if (!graceStartedRaw) {
+      await this.redis.set(graceKey, String(now), 'EX', QUEUE_TIMEOUT_SEC, 'NX');
+      return null;
+    }
+
+    const graceStartedAt = Number(graceStartedRaw);
+    if (
+      !Number.isFinite(graceStartedAt) ||
+      now - graceStartedAt < OFFLINE_FALLBACK_DELAY_SEC * 1000
+    ) {
+      if (!Number.isFinite(graceStartedAt)) {
+        await this.redis.set(graceKey, String(now), 'EX', QUEUE_TIMEOUT_SEC);
+      }
+      return null;
+    }
+
+    const retryAcquired = await this.redis.set(
+      this.offlineRetryKey(myEntry.userId),
+      '1',
+      'EX',
+      OFFLINE_RETRY_INTERVAL_SEC,
+      'NX',
+    );
+    if (!retryAcquired) return null;
+
+    if (await this.hasCompatibleOnlineCandidate(myEntry, blockSet)) {
+      await this.clearOfflineFallbackState(myEntry.userId);
+      return null;
+    }
+
+    const onlineUserIds = await this.redis.zrange(QUEUE_ZSET, 0, -1);
+
+    const candidates = await this.offlineCandidateRepository.findEligible({
+      requesterId: myEntry.userId,
+      requesterGender: myEntry.gender,
+      requesterPreference: myEntry.preference,
+      excludedUserIds: [...blockSet, ...onlineUserIds],
+      limit: OFFLINE_CANDIDATE_LIMIT,
+    });
+
+    for (const candidate of candidates) {
+      const claimId = await this.acquireUserClaims(myEntry.userId, candidate.userId);
+      if (!claimId) continue;
+
+      try {
+        const candidateQueueEntry = await this.getQueueEntry(candidate.userId);
+        if (candidateQueueEntry) {
+          if (Date.now() >= candidateQueueEntry.expiresAt) {
+            await this.leaveQueue(candidate.userId);
+          } else {
+            if (this.isCompatible(myEntry, candidateQueueEntry)) {
+              await this.clearOfflineFallbackState(myEntry.userId);
+              return null;
+            }
+            continue;
+          }
+        }
+
+        const candidateProfile = await this.profileService.findByUserId(candidate.userId);
+        if (
+          !candidateProfile ||
+          candidateProfile.offlineMatchingEnabled === false ||
+          !this.isValidGender(candidateProfile.gender) ||
+          !this.isValidPreference(candidateProfile.chatPreference) ||
+          !this.isCompatible(myEntry, {
+            userId: candidate.userId,
+            socketId: `pending:${candidate.userId}`,
+            gender: candidateProfile.gender,
+            preference: candidateProfile.chatPreference,
+            joinedAt: now,
+            expiresAt: now + MATCH_LOCK_TTL_SEC * 1000,
+          })
+        ) {
+          continue;
+        }
+
+        const [blockedByRequester, blockedByCandidate, myActiveRoom, candidateActiveRoom] =
+          await Promise.all([
+            this.blocklistService.isBlocked(myEntry.userId, candidate.userId),
+            this.blocklistService.isBlocked(candidate.userId, myEntry.userId),
+            this.roomService.getActiveRoomForUser(myEntry.userId),
+            this.roomService.getActiveRoomForUser(candidate.userId),
+          ]);
+        if (blockedByRequester || blockedByCandidate || candidateActiveRoom) continue;
+        if (myActiveRoom) {
+          await this.leaveQueue(myEntry.userId);
+          return null;
+        }
+
+        // Mongo lookup can take long enough for a compatible user to join Redis.
+        // Recheck while the requester is claimed before committing to an offline room.
+        if (await this.hasCompatibleOnlineCandidate(myEntry, blockSet)) {
+          await this.clearOfflineFallbackState(myEntry.userId);
+          return null;
+        }
+
+        const room = await this.roomService.createRoomIfAvailable([
+          myEntry.userId,
+          candidate.userId,
+        ]);
+        if (!room) continue;
+
+        await this.leaveQueue(myEntry.userId);
+        this.logger.log(`Offline matched ${myEntry.userId} <-> ${candidate.userId}`);
+        return {
+          roomId: room.roomId,
+          partnerId: candidate.userId,
+          partnerSocketId: `pending:${candidate.userId}`,
+          source: 'offline',
+        };
+      } finally {
+        await this.releaseUserClaims(myEntry.userId, candidate.userId, claimId);
+      }
+    }
+
+    return null;
+  }
+
+  private async hasCompatibleOnlineCandidate(
+    myEntry: QueueEntry,
+    blockSet: Set<string>,
+  ): Promise<boolean> {
+    const candidateIds = await this.redis.zrange(QUEUE_ZSET, 0, -1);
+
+    for (const candidateId of candidateIds) {
+      if (candidateId === myEntry.userId || blockSet.has(candidateId)) continue;
+
+      const candidate = await this.getQueueEntry(candidateId);
+      if (!candidate) {
+        await this.redis.zrem(QUEUE_ZSET, candidateId);
+        continue;
+      }
+      if (Date.now() >= candidate.expiresAt) {
+        await this.leaveQueue(candidateId);
+        continue;
+      }
+      if (!this.isCompatible(myEntry, candidate)) continue;
+
+      if (await this.roomService.getActiveRoomForUser(candidateId)) {
+        await this.leaveQueue(candidateId);
+        continue;
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
+  private async acquireUserClaims(userA: string, userB: string): Promise<string | null> {
+    const [firstKey, secondKey] = [this.userClaimKey(userA), this.userClaimKey(userB)].sort();
+    const claimId = randomUUID();
+    const script = `
+      if redis.call("EXISTS", KEYS[1]) == 1 or redis.call("EXISTS", KEYS[2]) == 1 then
+        return 0
+      end
+      redis.call("SET", KEYS[1], ARGV[1], "EX", ARGV[2])
+      redis.call("SET", KEYS[2], ARGV[1], "EX", ARGV[2])
+      return 1
+    `;
+    const claimed = await this.redis.eval(
+      script,
+      2,
+      firstKey,
+      secondKey,
+      claimId,
+      MATCH_LOCK_TTL_SEC,
+    );
+    return claimed === 1 ? claimId : null;
+  }
+
+  private async releaseUserClaims(userA: string, userB: string, claimId: string): Promise<void> {
+    const [firstKey, secondKey] = [this.userClaimKey(userA), this.userClaimKey(userB)].sort();
+    const script = `
+      for _, key in ipairs(KEYS) do
+        if redis.call("GET", key) == ARGV[1] then
+          redis.call("DEL", key)
+        end
+      end
+      return 1
+    `;
+    await this.redis.eval(script, 2, firstKey, secondKey, claimId);
   }
 
   /** Xóa cả hai khỏi queue bằng Lua script atomic để tránh claim trùng khi tải cao */

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
@@ -74,6 +75,7 @@ function buildUserAndProfile({ gender, index, passwordHash, emailDomain, now }) 
     bio: `Seeded ${gender} test profile ${number}`,
     avatar: '',
     chatPreference: gender === 'male' ? 'female' : 'male',
+    offlineMatchingEnabled: true,
     isVip: false,
     vipExpiresAt: null,
     createdAt: now,

@@ -32,3 +32,11 @@ export class Room {
 }
 
 export const RoomSchema = SchemaFactory.createForClass(Room);
+RoomSchema.index(
+  { participants: 1 },
+  {
+    unique: true,
+    name: 'unique_active_room_participant',
+    partialFilterExpression: { status: RoomStatus.ACTIVE },
+  },
+);

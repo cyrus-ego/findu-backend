@@ -29,4 +29,5 @@ export interface MatchResult {
   roomId: string;
   partnerId: string;
   partnerSocketId: string;
+  source: 'online' | 'offline';
 }

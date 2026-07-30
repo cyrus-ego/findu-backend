@@ -1,4 +1,13 @@
-import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Gender, ChatPreference } from '../entities/profile.schema';
 
 export class CreateProfileDto {
@@ -23,4 +32,8 @@ export class CreateProfileDto {
   @IsOptional()
   @IsEnum(ChatPreference, { message: 'Preference không hợp lệ' })
   chatPreference?: ChatPreference;
+
+  @IsOptional()
+  @IsBoolean({ message: 'Cài đặt ghép đôi ngoại tuyến không hợp lệ' })
+  offlineMatchingEnabled?: boolean;
 }
