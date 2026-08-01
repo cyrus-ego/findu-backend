@@ -124,12 +124,12 @@ export class AuthController {
   @ApiOperation({
     summary: 'Đăng nhập Facebook (mobile)',
     description:
-      'Mobile gửi `accessToken` từ Facebook Login SDK. Server xác minh token qua Graph API và trả JWT (access + refresh).',
+      'Mobile gửi token từ Facebook Login SDK. Server hỗ trợ access token truyền thống và Limited Login OIDC token trên iOS, sau đó trả JWT (access + refresh).',
   })
   @ApiSuccessResponse(AuthTokenResponseDto)
   @ApiStandardErrors()
   facebookLoginMobile(@Body() dto: FacebookAuthDto) {
-    return this.authService.facebookLoginWithAccessToken(dto.accessToken);
+    return this.authService.facebookLoginWithToken(dto.accessToken, dto.tokenType, dto.nonce);
   }
 
   @Public()

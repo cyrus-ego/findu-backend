@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { createHmac } from 'crypto';
+import { createHmac, createPublicKey, verify as verifySignature } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 import { UserService } from '../user/user.service';
 import { OtpRepository } from './otp.repository';
@@ -23,13 +23,38 @@ import {
 import { UserDocument } from '../user/entities/user.schema';
 import { toAuthTokenResponse } from './dto/auth-response.dto';
 import { isOAuthClientConfigured } from './oauth.util';
+import { FacebookTokenType } from './dto/facebook-auth.dto';
 
 /** Mã bypass tạm thời, chỉ dùng khi dev hoặc bật ALLOW_OTP_BYPASS=true */
 const OTP_BYPASS_CODE = '000000';
 
+interface FacebookJwk {
+  kid?: string;
+  kty?: string;
+  alg?: string;
+  use?: string;
+  n?: string;
+  e?: string;
+  [key: string]: unknown;
+}
+
+interface FacebookLimitedClaims {
+  iss?: string;
+  aud?: string | string[];
+  sub?: string;
+  user_id?: string;
+  exp?: number;
+  iat?: number;
+  nonce?: string;
+  email?: string;
+  name?: string;
+  picture?: string | { data?: { url?: string } };
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private facebookJwksCache?: { keys: FacebookJwk[]; expiresAt: number };
 
   constructor(
     private readonly userService: UserService,
@@ -155,19 +180,37 @@ export class AuthService {
     return this.generateTokens(user);
   }
 
-  /** Đăng nhập Facebook bằng accessToken (mobile / native SDK) */
-  async facebookLoginWithAccessToken(accessToken: string) {
+  /** Đăng nhập Facebook bằng access token hoặc Limited Login OIDC token. */
+  async facebookLoginWithToken(
+    token: string,
+    tokenType: FacebookTokenType = FacebookTokenType.CLASSIC,
+    nonce?: string,
+  ) {
     const facebookAppId = this.config.get<string>('FACEBOOK_APP_ID')?.trim();
-    const facebookAppSecret = this.config.get<string>('FACEBOOK_APP_SECRET')?.trim();
-    if (
-      !facebookAppId ||
-      !facebookAppSecret ||
-      !isOAuthClientConfigured(facebookAppId) ||
-      !isOAuthClientConfigured(facebookAppSecret)
-    ) {
+    if (!facebookAppId || !isOAuthClientConfigured(facebookAppId)) {
       throw new BadRequestException('Facebook OAuth chưa được cấu hình trên server');
     }
 
+    if (tokenType === FacebookTokenType.LIMITED) {
+      if (!nonce?.trim()) {
+        throw new BadRequestException('nonce là bắt buộc khi dùng Facebook Limited Login');
+      }
+      return this.facebookLoginWithLimitedToken(token, facebookAppId, nonce);
+    }
+
+    const facebookAppSecret = this.config.get<string>('FACEBOOK_APP_SECRET')?.trim();
+    if (!facebookAppSecret || !isOAuthClientConfigured(facebookAppSecret)) {
+      throw new BadRequestException('Facebook OAuth chưa được cấu hình trên server');
+    }
+
+    return this.facebookLoginWithClassicAccessToken(token, facebookAppId, facebookAppSecret);
+  }
+
+  private async facebookLoginWithClassicAccessToken(
+    accessToken: string,
+    facebookAppId: string,
+    facebookAppSecret: string,
+  ) {
     await this.verifyFacebookAccessToken(accessToken, facebookAppId, facebookAppSecret);
 
     let fbUser: {
@@ -205,7 +248,111 @@ export class AuthService {
       name: fbUser.name || fbUser.id,
       avatar: fbUser.picture?.data?.url,
       provider: 'facebook',
+      providerId: fbUser.id,
     });
+  }
+
+  /**
+   * Limited Login trả về OIDC token thay vì Graph API access token. Token được
+   * xác minh bằng JWKS của Facebook, audience của app và nonce của login request.
+   */
+  private async facebookLoginWithLimitedToken(token: string, appId: string, nonce: string) {
+    const claims = await this.verifyFacebookLimitedToken(token, appId, nonce);
+    const facebookId = claims.sub || claims.user_id;
+    if (!facebookId) {
+      throw new UnauthorizedException('Không lấy được thông tin từ tài khoản Facebook');
+    }
+
+    const avatar = typeof claims.picture === 'string' ? claims.picture : claims.picture?.data?.url;
+
+    return this.oauthLogin({
+      email: claims.email || `fb_${facebookId}@strangerconfide.local`,
+      name: claims.name || facebookId,
+      avatar,
+      provider: 'facebook',
+      providerId: facebookId,
+    });
+  }
+
+  private async verifyFacebookLimitedToken(
+    token: string,
+    appId: string,
+    expectedNonce: string,
+  ): Promise<FacebookLimitedClaims> {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) throw new Error('Malformed JWT');
+
+      const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8')) as {
+        alg?: string;
+        kid?: string;
+      };
+      const claims = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf8'),
+      ) as FacebookLimitedClaims;
+
+      if (header.alg !== 'RS256' || !header.kid) throw new Error('Unsupported JWT header');
+
+      const jwk = await this.getFacebookSigningKey(header.kid);
+      const publicKey = createPublicKey({ key: jwk as any, format: 'jwk' });
+      const signatureValid = verifySignature(
+        'RSA-SHA256',
+        Buffer.from(`${parts[0]}.${parts[1]}`, 'utf8'),
+        publicKey,
+        Buffer.from(parts[2], 'base64url'),
+      );
+      if (!signatureValid) throw new Error('Invalid JWT signature');
+
+      const now = Math.floor(Date.now() / 1000);
+      const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+      if (claims.iss !== 'https://www.facebook.com') throw new Error('Invalid issuer');
+      if (!audiences.includes(appId)) throw new Error('Invalid audience');
+      if (typeof claims.exp !== 'number' || claims.exp <= now) throw new Error('Expired token');
+      if (typeof claims.iat !== 'number' || claims.iat > now + 300) {
+        throw new Error('Invalid issued-at time');
+      }
+      if (!claims.nonce || claims.nonce !== expectedNonce) throw new Error('Invalid nonce');
+
+      return claims;
+    } catch (err) {
+      this.logger.warn(`Facebook Limited Login verify failed: ${(err as Error).message}`);
+      throw new UnauthorizedException('Facebook Limited Login token không hợp lệ hoặc đã hết hạn');
+    }
+  }
+
+  private async getFacebookSigningKey(kid: string): Promise<FacebookJwk> {
+    let keys = await this.getFacebookJwks();
+    let key = keys.find((candidate) => candidate.kid === kid);
+
+    // Facebook có thể vừa rotate key; refresh ngay một lần nếu cache chưa có kid.
+    if (!key) {
+      this.facebookJwksCache = undefined;
+      keys = await this.getFacebookJwks();
+      key = keys.find((candidate) => candidate.kid === kid);
+    }
+
+    if (!key || key.kty !== 'RSA') throw new Error('Facebook signing key not found');
+    return key;
+  }
+
+  private async getFacebookJwks(): Promise<FacebookJwk[]> {
+    if (this.facebookJwksCache && this.facebookJwksCache.expiresAt > Date.now()) {
+      return this.facebookJwksCache.keys;
+    }
+
+    const res = await fetch('https://www.facebook.com/.well-known/oauth/openid/jwks/');
+    if (!res.ok) throw new Error(`Facebook JWKS request failed (${res.status})`);
+
+    const payload = (await res.json()) as { keys?: FacebookJwk[] };
+    if (!Array.isArray(payload.keys) || payload.keys.length === 0) {
+      throw new Error('Facebook JWKS response is empty');
+    }
+
+    this.facebookJwksCache = {
+      keys: payload.keys,
+      expiresAt: Date.now() + 6 * 60 * 60 * 1000,
+    };
+    return payload.keys;
   }
 
   private async verifyFacebookAccessToken(
@@ -253,7 +400,13 @@ export class AuthService {
 
     const client = new OAuth2Client();
     let payload:
-      | { email?: string; email_verified?: boolean; name?: string; picture?: string }
+      | {
+          sub?: string;
+          email?: string;
+          email_verified?: boolean;
+          name?: string;
+          picture?: string;
+        }
       | undefined;
 
     try {
@@ -280,6 +433,7 @@ export class AuthService {
       name: payload.name || payload.email.split('@')[0],
       avatar: payload.picture,
       provider: 'google',
+      providerId: payload.sub,
     });
   }
 
@@ -300,17 +454,34 @@ export class AuthService {
   }
 
   /** Đăng nhập qua OAuth (Google / Facebook) */
-  async oauthLogin(oauthUser: { email: string; name: string; avatar?: string; provider: string }) {
-    let user = await this.userService.findByEmail(oauthUser.email);
+  async oauthLogin(oauthUser: {
+    email: string;
+    name: string;
+    avatar?: string;
+    provider: string;
+    providerId?: string;
+  }) {
+    let user =
+      oauthUser.provider === 'facebook' && oauthUser.providerId
+        ? await this.userService.findByFacebookId(oauthUser.providerId)
+        : null;
+    user ??= await this.userService.findByEmail(oauthUser.email);
+
     if (!user) {
       user = await this.userService.create({
         email: oauthUser.email,
         displayName: oauthUser.name,
         avatar: oauthUser.avatar,
         provider: oauthUser.provider as any,
+        facebookId: oauthUser.provider === 'facebook' ? oauthUser.providerId : undefined,
         password: '',
         isEmailVerified: true, // OAuth đã xác thực email
       });
+    } else if (oauthUser.provider === 'facebook' && oauthUser.providerId && !user.facebookId) {
+      const linked = await this.userService.updateById(String(user._id), {
+        facebookId: oauthUser.providerId,
+      });
+      if (linked) user = linked;
     }
 
     if (user.isBanned) {

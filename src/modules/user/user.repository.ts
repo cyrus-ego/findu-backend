@@ -15,6 +15,10 @@ export class UserRepository {
     return this.userModel.findOne({ email: email.toLowerCase() }).exec();
   }
 
+  async findByFacebookId(facebookId: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ facebookId }).exec();
+  }
+
   async create(data: Partial<User>): Promise<UserDocument> {
     return this.userModel.create(data);
   }

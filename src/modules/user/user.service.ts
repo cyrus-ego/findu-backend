@@ -17,6 +17,10 @@ export class UserService {
     return this.userRepository.findByEmail(email);
   }
 
+  findByFacebookId(facebookId: string): Promise<UserDocument | null> {
+    return this.userRepository.findByFacebookId(facebookId);
+  }
+
   create(data: Partial<User>): Promise<UserDocument> {
     return this.userRepository.create(data);
   }

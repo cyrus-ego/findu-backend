@@ -41,6 +41,10 @@ export class User {
   @Prop({ type: String, enum: AuthProvider, default: AuthProvider.LOCAL })
   provider: AuthProvider;
 
+  /** ID ổn định của Facebook account, dùng cả khi Facebook không trả email. */
+  @Prop({ unique: true, sparse: true })
+  facebookId?: string;
+
   @Prop({ type: String, enum: UserRole, default: UserRole.USER })
   role: UserRole;
 
