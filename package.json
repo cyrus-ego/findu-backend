@@ -1,7 +1,7 @@
 {
-  "name": "strangerconfide-backend",
+  "name": "talk-first-backend",
   "version": "0.1.0",
-  "description": "StrangerConfide Backend - Anonymous 1:1 Chat API",
+  "description": "Talk First backend for private one-to-one social conversations",
   "private": true,
   "scripts": {
     "build": "nest build",

@@ -22,7 +22,7 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
   ) {
     const { displayName, emails, photos } = profile;
     const user = {
-      email: emails?.[0]?.value || `fb_${profile.id}@strangerconfide.local`,
+      email: emails?.[0]?.value || `fb_${profile.id}@talkfirst.local`,
       name: displayName,
       avatar: photos?.[0]?.value,
       provider: 'facebook',

@@ -1,8 +1,16 @@
 /**
- * Tạo nickname ẩn danh ngẫu nhiên cho phòng chat
- * Ví dụ: Stranger#7482, Wanderer#1234
+ * Tạo bí danh ngẫu nhiên cho cuộc trò chuyện.
+ * Ví dụ: Member#7482, Listener#1234
  */
-const PREFIXES = ['Stranger', 'Wanderer', 'Phantom', 'Shadow', 'Ghost', 'Mystic', 'Echo'];
+const PREFIXES = [
+  'Member',
+  'Listener',
+  'Speaker',
+  'Companion',
+  'Neighbor',
+  'Friend',
+  'Voice',
+];
 
 export function generateAnonymousNickname(): string {
   const prefix = PREFIXES[Math.floor(Math.random() * PREFIXES.length)];

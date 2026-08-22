@@ -78,8 +78,8 @@ async function bootstrap() {
 
   // Swagger / OpenAPI
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('StrangerConfide API')
-    .setDescription('REST API docs cho StrangerConfide backend')
+    .setTitle('Talk First API')
+    .setDescription('REST API docs cho Talk First backend')
     .setVersion('1.0')
     .addBearerAuth(
       {
@@ -106,7 +106,7 @@ async function bootstrap() {
 
   const port = config.get<number>('PORT', 3000);
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 StrangerConfide Backend chạy tại: http://localhost:${port}/api`);
+  console.log(`🚀 Talk First Backend chạy tại: http://localhost:${port}/api`);
   console.log(`📚 Swagger UI: http://localhost:${port}/api/docs`);
 }
 

@@ -5,7 +5,7 @@ export class ChatMessageDto {
   @ApiProperty({ example: '665a1b2c3d4e5f6789012348' })
   id: string;
 
-  @ApiProperty({ example: 'Stranger#7482' })
+  @ApiProperty({ example: 'Member#7482' })
   senderAlias: string;
 
   @ApiProperty({ example: 'text', enum: ['text', 'image', 'system'] })

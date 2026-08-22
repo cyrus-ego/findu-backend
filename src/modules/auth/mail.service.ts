@@ -36,16 +36,16 @@ export class MailService {
 
     const from = this.config.get<string>(
       'MAIL_FROM',
-      'StrangerConfide <noreply@strangerconfide.app>',
+      'Talk First <noreply@talkfirst.app>',
     );
 
     try {
       await this.transporter.sendMail({
         from,
         to: email,
-        subject: '[StrangerConfide] Mã xác thực email của bạn',
+        subject: '[Talk First] Mã xác thực email của bạn',
         text: [
-          'StrangerConfide',
+          'Talk First',
           '',
           `Mã xác thực email của bạn là: ${otp}`,
           'Nếu không thấy OTP, hãy kiểm tra trong Spam/Thư rác.',
@@ -55,7 +55,7 @@ export class MailService {
         ].join('\n'),
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-            <h2 style="color: #6d28d9;">StrangerConfide</h2>
+            <h2 style="color: #6d28d9;">Talk First</h2>
             <p>Xin chào,</p>
             <p>Mã xác thực email của bạn là:</p>
             <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; text-align: center;">

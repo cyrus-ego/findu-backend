@@ -244,7 +244,7 @@ export class AuthService {
     }
 
     return this.oauthLogin({
-      email: fbUser.email || `fb_${fbUser.id}@strangerconfide.local`,
+      email: fbUser.email || `fb_${fbUser.id}@talkfirst.local`,
       name: fbUser.name || fbUser.id,
       avatar: fbUser.picture?.data?.url,
       provider: 'facebook',
@@ -266,7 +266,7 @@ export class AuthService {
     const avatar = typeof claims.picture === 'string' ? claims.picture : claims.picture?.data?.url;
 
     return this.oauthLogin({
-      email: claims.email || `fb_${facebookId}@strangerconfide.local`,
+      email: claims.email || `fb_${facebookId}@talkfirst.local`,
       name: claims.name || facebookId,
       avatar,
       provider: 'facebook',

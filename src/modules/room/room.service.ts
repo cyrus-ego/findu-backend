@@ -75,7 +75,7 @@ export class RoomService {
       roomId,
       myAlias: getParticipantAlias(room, userId),
       myAvatar: getParticipantAvatar(room, userId),
-      partnerAlias: partnerId ? getParticipantAlias(room, partnerId) : 'Stranger',
+      partnerAlias: partnerId ? getParticipantAlias(room, partnerId) : 'Member',
       partnerAvatar: partnerId ? getParticipantAvatar(room, partnerId) : '',
       partnerOnline,
       isAnonymous: true,

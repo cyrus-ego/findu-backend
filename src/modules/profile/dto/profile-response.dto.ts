@@ -9,7 +9,7 @@ export class ProfileUserSummaryDto {
   @ApiProperty({ example: 'user@example.com' })
   email: string;
 
-  @ApiProperty({ example: 'Stranger#4821' })
+  @ApiProperty({ example: 'Member#4821' })
   displayName: string;
 
   @ApiProperty({ example: 'https://api.dicebear.com/7.x/avataaars/svg?seed=abc' })

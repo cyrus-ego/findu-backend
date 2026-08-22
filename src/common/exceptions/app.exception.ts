@@ -16,7 +16,7 @@ export interface AppExceptionPayload {
 }
 
 /**
- * Exception nội bộ chuẩn của StrangerConfide.
+ * Exception nội bộ chuẩn của Talk First.
  * Mọi HttpExceptionFilter sẽ đọc `code`/`errors` từ đây để tạo response.
  */
 export class AppException extends HttpException {

@@ -50,7 +50,7 @@ export class RoomController {
   }
 
   @Get(':roomId')
-  @ApiOperation({ summary: 'Thông tin phiên chat ẩn danh' })
+  @ApiOperation({ summary: 'Thông tin phiên trò chuyện 1:1' })
   @ApiParam({ name: 'roomId', example: 'f47ac10b-58cc-4372-a567-0e02b2c3d479' })
   @ApiSuccessResponse(RoomDetailResponseDto)
   @ApiStandardErrors()
