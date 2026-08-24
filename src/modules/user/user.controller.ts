@@ -9,6 +9,8 @@ import { UserResponseDto } from './dto/user-response.dto';
 import { NotificationService } from '../notification/notification.service';
 import { RegisterFcmTokenDto, UnregisterFcmTokenDto } from '../notification/dto/fcm-token.dto';
 import { MessageResponseDto } from '../../common/dto/message-response.dto';
+import { AccountDeletionRequestService } from './account-deletion-request.service';
+import { AccountDeletionRequestResponseDto } from './dto/account-deletion-request-response.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('access-token')
@@ -17,6 +19,7 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly notificationService: NotificationService,
+    private readonly accountDeletionRequestService: AccountDeletionRequestService,
   ) {}
 
   @Get('me')
@@ -33,6 +36,23 @@ export class UserController {
   @ApiStandardErrors()
   updateMe(@CurrentUser() user: UserDocument, @Body() dto: UpdateUserDto) {
     return this.userService.updateMe(String(user._id), dto);
+  }
+
+  @Get('me/deletion-request')
+  @ApiOperation({ summary: 'Xem trạng thái yêu cầu xóa tài khoản gần nhất' })
+  @ApiSuccessResponse(AccountDeletionRequestResponseDto)
+  @ApiStandardErrors()
+  getDeletionRequest(@CurrentUser() user: UserDocument) {
+    return this.accountDeletionRequestService.getLatest(String(user._id));
+  }
+
+  @Post('me/deletion-request')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Ghi nhận yêu cầu xóa tài khoản và dữ liệu liên quan' })
+  @ApiSuccessResponse(AccountDeletionRequestResponseDto)
+  @ApiStandardErrors()
+  requestAccountDeletion(@CurrentUser() user: UserDocument) {
+    return this.accountDeletionRequestService.requestDeletion(user);
   }
 
   @Post('me/fcm-tokens')
